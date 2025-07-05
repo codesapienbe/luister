@@ -1,46 +1,39 @@
 """Real-time audio visualizer for Luister.
 
-Uses librosa to analyse the audio file into magnitude bands, then draws a bar
-visualisation that advances with playback time.
+Uses numpy and librosa to analyze the current audio file into magnitude bands,
+then draws a bar visualization that advances with playback time.
 
-If *librosa* is unavailable, the widget shows nothing but does not break the
-app.
+If librosa is unavailable, the widget shows nothing but does not break the app.
 """
 
 from __future__ import annotations
 
-import math
-from typing import Optional, TYPE_CHECKING, Any
+from typing import Optional
 
-from PyQt6.QtCore import QTimer, Qt, QRect
+import numpy as np
+try:
+    import librosa  # type: ignore[import]
+except ImportError:
+    librosa = None
+
+from PyQt6.QtCore import QRect
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QWidget
 
-try:
-    import librosa  # type: ignore
-    import numpy as np  # type: ignore
-except ImportError:  # optional dependency not installed
-    librosa = None  # type: ignore
-    np = None  # type: ignore
-
-
 class VisualizerWidget(QWidget):
-    """Simple bar visualizer driven by pre-computed magnitude data."""
+    """Simple bar visualizer driven by the current audio playback."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setMinimumHeight(80)
-        self._magnitudes: Optional[Any] = None  # ndarray when numpy present
-        self._times: Optional[Any] = None  # frame timestamps sec
+        self._magnitudes: Optional[np.ndarray] = None
+        self._times: Optional[np.ndarray] = None
         self._current_index: int = 0
-        # timer not strictly needed; driven by external update_position
         self._bar_color = QColor("#4caf50")
         self.setAutoFillBackground(False)
 
-    # ---------------- Public API ---------------- #
-
     def set_audio(self, file_path: str):
-        """Load *file_path* with librosa and pre-compute magnitude per band."""
+        """Load file_path with librosa and pre-compute magnitude per band."""
         if librosa is None:
             self._magnitudes = None
             self._times = None
@@ -48,15 +41,17 @@ class VisualizerWidget(QWidget):
         try:
             y, sr = librosa.load(file_path, mono=True, sr=None)
             hop_length = 1024
-            stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))  # type: ignore[attr-defined]
-            # average magnitude in 16 frequency bins per frame
+            stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
             bands = 16
-            mag_per_band = stft.reshape(bands, -1, stft.shape[1]).mean(axis=1)  # type: ignore[attr-defined]
-            # Use log scale
-            mag_db = librosa.amplitude_to_db(mag_per_band, ref=np.max)  # type: ignore[attr-defined]
-            mag_db = np.clip((mag_db + 80) / 80, 0, 1)  # type: ignore[attr-defined]
-            self._magnitudes = mag_db.T  # shape (frames, bands)
-            self._times = librosa.frames_to_time(np.arange(self._magnitudes.shape[0]), sr=sr, hop_length=hop_length)  # type: ignore[attr-defined]
+            # split frequency bins into bands and average each band
+            bands_data = np.array_split(stft, bands, axis=0)
+            mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
+            mag_db = librosa.amplitude_to_db(mag_per_band, ref=np.max)
+            mag_db = np.clip((mag_db + 80) / 80, 0, 1)
+            magnitudes = mag_db.T
+            self._magnitudes = magnitudes
+            self._times = librosa.frames_to_time(
+                np.arange(magnitudes.shape[0]), sr=sr, hop_length=hop_length)
         except Exception:
             self._magnitudes = None
             self._times = None
@@ -66,25 +61,27 @@ class VisualizerWidget(QWidget):
         if self._times is None:
             return
         sec = ms / 1000.0
-        idx = np.searchsorted(self._times, sec)  # type: ignore[attr-defined]
-        self._current_index = max(0, min(idx, len(self._times) - 1))
-        self.update()  # trigger repaint
+        idx = np.searchsorted(self._times, sec)
+        self._current_index = max(0, min(idx, len(self._times) - 1))  # type: ignore[arg-type]
+        self.update()
 
-    # ---------------- Paint ---------------- #
-
-    def paintEvent(self, event):  # noqa: D401
+    def paintEvent(self, event):
         if self._magnitudes is None:
             return
+        # Narrow Optional for type checker
+        magnitudes: np.ndarray = self._magnitudes  # type: ignore
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width()
         h = self.height()
-        bands = self._magnitudes.shape[1]
-        bar_width = w / bands
-        mags = self._magnitudes[self._current_index]
+        mags = magnitudes[self._current_index]
+        bar_count = mags.shape[0]
+        bar_width = w / bar_count if bar_count else w
         for i, mag in enumerate(mags):
             bar_h = mag * h
-            rect = QRect(int(i * bar_width), int(h - bar_h), int(bar_width * 0.8), int(bar_h))
+            rect = QRect(
+                int(i * bar_width), int(h - bar_h), int(bar_width * 0.8), int(bar_h)
+            )
             color = QColor(self._bar_color)
             color.setAlphaF(max(0.2, mag))
             painter.fillRect(rect, color)
