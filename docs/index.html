@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luister - Where Nostalgia Meets the Future</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="particles-bg" id="particles"></div>
+    
+    <header class="header">
+        <nav class="nav container">
+            <div class="nav__logo">
+                <h3>Luister</h3>
+            </div>
+            <div class="nav__links">
+                <a href="#features" class="nav__link">Features</a>
+                <a href="#roadmap" class="nav__link">Roadmap</a>
+                <a href="https://github.com/codesapienbe/luister" target="_blank" class="nav__link">GitHub</a>
+                <a href="#download" class="btn btn--primary btn--sm">Download</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="container">
+                <div class="hero__content">
+                    <div class="hero__text">
+                        <h1 class="hero__title">
+                            <span class="gradient-text">Luister</span>
+                        </h1>
+                        <p class="hero__subtitle">Where Nostalgia Meets the Future</p>
+                        <p class="hero__description">The beloved music player experience, reimagined for modern platforms. Enjoy classic Winamp vibes with powerful new features including YouTube integration and cross-platform support.</p>
+                        
+                        <div class="hero__buttons">
+                            <a href="#download" class="btn btn--primary btn--lg glow-effect">
+                                <span>Download Now</span>
+                            </a>
+                            <a href="https://github.com/codesapienbe/luister" target="_blank" class="btn btn--outline btn--lg">
+                                <span>⭐ Star on GitHub</span>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="hero__visual">
+                        <div class="install-card">
+                            <div class="install-card__header">
+                                <div class="terminal-dots">
+                                    <span class="dot dot--red"></span>
+                                    <span class="dot dot--yellow"></span>
+                                    <span class="dot dot--green"></span>
+                                </div>
+                                <span class="terminal-title">Terminal</span>
+                            </div>
+                            <div class="install-card__content">
+                                <div class="command-line">
+                                    <span class="prompt">$</span>
+                                    <span class="command" id="typewriter">uv run luister</span>
+                                    <span class="cursor">|</span>
+                                </div>
+                                <button class="copy-btn" id="copyBtn">
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="equalizer">
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features" id="features">
+            <div class="container">
+                <h2 class="section-title">Powerful Features</h2>
+                <div class="features__grid">
+                    <div class="feature-card" data-aos="fade-up">
+                        <div class="feature-card__icon">🎵</div>
+                        <h3 class="feature-card__title">Classic Interface</h3>
+                        <p class="feature-card__description">Familiar Winamp-inspired design that brings back memories while staying modern and functional.</p>
+                    </div>
+                    
+                    <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+                        <div class="feature-card__icon">💻</div>
+                        <h3 class="feature-card__title">Cross-Platform</h3>
+                        <p class="feature-card__description">Native performance on Windows, macOS, and Linux. One app, everywhere you need it.</p>
+                    </div>
+                    
+                    <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+                        <div class="feature-card__icon">🚫</div>
+                        <h3 class="feature-card__title">Ad-Free</h3>
+                        <p class="feature-card__description">Pure, uninterrupted music experience. No ads, no distractions, just your music.</p>
+                    </div>
+                    
+                    <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+                        <div class="feature-card__icon">📁</div>
+                        <h3 class="feature-card__title">Local Control</h3>
+                        <p class="feature-card__description">Your music library stays on your machine. Full privacy and control over your collection.</p>
+                    </div>
+                    
+                    <div class="feature-card" data-aos="fade-up" data-aos-delay="400">
+                        <div class="feature-card__icon">⚡</div>
+                        <h3 class="feature-card__title">Easy Install</h3>
+                        <p class="feature-card__description">Get started in seconds with a single command. No complex setup or configuration needed.</p>
+                    </div>
+                    
+                    <div class="feature-card" data-aos="fade-up" data-aos-delay="500">
+                        <div class="feature-card__icon">🔓</div>
+                        <h3 class="feature-card__title">Open Source</h3>
+                        <p class="feature-card__description">Free forever, built by the community. Contribute, customize, and make it your own.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Roadmap Section -->
+        <section class="roadmap" id="roadmap">
+            <div class="container">
+                <h2 class="section-title">Roadmap</h2>
+                <div class="roadmap__timeline">
+                    <div class="roadmap__item" data-aos="fade-right">
+                        <div class="roadmap__content">
+                            <h3 class="roadmap__title">YouTube Link Playback</h3>
+                            <p class="roadmap__description">Play any YouTube video directly in Luister without leaving the app</p>
+                            <div class="roadmap__meta">
+                                <span class="roadmap__timeline-text">Month 2</span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" data-progress="30" style="background: #00ff88;"></div>
+                                </div>
+                                <span class="progress-text">30%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="roadmap__item" data-aos="fade-left">
+                        <div class="roadmap__content">
+                            <h3 class="roadmap__title">YouTube Playlist Support</h3>
+                            <p class="roadmap__description">Import and manage your YouTube playlists seamlessly within Luister</p>
+                            <div class="roadmap__meta">
+                                <span class="roadmap__timeline-text">Month 4</span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" data-progress="10" style="background: #00d4ff;"></div>
+                                </div>
+                                <span class="progress-text">10%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="roadmap__item" data-aos="fade-right">
+                        <div class="roadmap__content">
+                            <h3 class="roadmap__title">Audio Stream Support</h3>
+                            <p class="roadmap__description">Stream from any audio URL or online radio station with full control</p>
+                            <div class="roadmap__meta">
+                                <span class="roadmap__timeline-text">Month 6</span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" data-progress="5" style="background: #ff006e;"></div>
+                                </div>
+                                <span class="progress-text">5%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="cta" id="download">
+            <div class="container">
+                <div class="cta__content">
+                    <h2 class="cta__title">Ready to Experience the Future?</h2>
+                    <p class="cta__description">Join the growing community of music lovers who've made the switch to Luister</p>
+                    <div class="cta__buttons">
+                        <a href="#" class="btn btn--primary btn--lg glow-effect">
+                            <span>Download Now</span>
+                        </a>
+                        <a href="https://github.com/codesapienbe/luister" target="_blank" class="btn btn--outline btn--lg">
+                            <span>View on GitHub</span>
+                        </a>
+                    </div>
+                    <div class="cta__stats">
+                        <div class="stat">
+                            <div class="stat__number">3</div>
+                            <div class="stat__label">Platforms Supported</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat__number">∞</div>
+                            <div class="stat__label">Free Forever</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat__number">100%</div>
+                            <div class="stat__label">Open Source</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer__content">
+                <div class="footer__brand">
+                    <h3>Luister</h3>
+                    <p>Where Nostalgia Meets the Future</p>
+                </div>
+                <div class="footer__links">
+                    <a href="https://github.com/codesapienbe/luister" target="_blank">GitHub</a>
+                    <a href="#features">Features</a>
+                    <a href="#roadmap">Roadmap</a>
+                </div>
+            </div>
+            <div class="footer__bottom">
+                <p>&copy; 2025 CodeSapien Network. Open source and free forever.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
