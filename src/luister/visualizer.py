@@ -16,8 +16,10 @@ try:
 except ImportError:
     librosa = None
 
-from PyQt6.QtCore import QRect
-from PyQt6.QtGui import QColor, QPainter
+import math
+import random
+from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 class VisualizerWidget(QWidget):
@@ -31,6 +33,9 @@ class VisualizerWidget(QWidget):
         self._current_index: int = 0
         self._bar_color = QColor("#4caf50")
         self.setAutoFillBackground(False)
+        # visual styles
+        self._style_index = 0
+        self._num_styles = 5
 
     def set_audio(self, file_path: str):
         """Load file_path with librosa and pre-compute magnitude per band."""
@@ -65,24 +70,74 @@ class VisualizerWidget(QWidget):
         self._current_index = max(0, min(idx, len(self._times) - 1))  # type: ignore[arg-type]
         self.update()
 
+    def mouseDoubleClickEvent(self, event):
+        """Cycle visual style on double click."""
+        self._style_index = (self._style_index + 1) % self._num_styles  # type: ignore
+        self.update()
+
     def paintEvent(self, event):
         if self._magnitudes is None:
             return
-        # Narrow Optional for type checker
-        magnitudes: np.ndarray = self._magnitudes  # type: ignore
+        mags_all = self._magnitudes  # type: ignore
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width()
         h = self.height()
-        mags = magnitudes[self._current_index]
-        bar_count = mags.shape[0]
-        bar_width = w / bar_count if bar_count else w
-        for i, mag in enumerate(mags):
-            bar_h = mag * h
-            rect = QRect(
-                int(i * bar_width), int(h - bar_h), int(bar_width * 0.8), int(bar_h)
-            )
-            color = QColor(self._bar_color)
-            color.setAlphaF(max(0.2, mag))
-            painter.fillRect(rect, color)
+        mags = mags_all[self._current_index]
+        bands = len(mags)
+        # style-based rendering
+        if self._style_index == 0:
+            # vertical bars
+            bar_width = w / bands if bands else w
+            for i, mag in enumerate(mags):
+                bar_h = mag * h
+                rect = QRect(int(i * bar_width), int(h - bar_h), int(bar_width * 0.8), int(bar_h))
+                color = QColor(self._bar_color)
+                color.setAlphaF(max(0.2, mag))
+                painter.fillRect(rect, color)
+        elif self._style_index == 1:
+            # horizontal bars
+            bar_height = h / bands if bands else h
+            for i, mag in enumerate(mags):
+                bar_w = mag * w
+                rect = QRect(0, int(i * bar_height), int(bar_w), int(bar_height * 0.8))
+                color = QColor(self._bar_color)
+                color.setAlphaF(max(0.2, mag))
+                painter.fillRect(rect, color)
+        elif self._style_index == 2:
+            # radial lines
+            center_x, center_y = w / 2, h / 2
+            radius = min(w, h) * 0.3
+            pen = QPen(self._bar_color)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            for i, mag in enumerate(mags):
+                angle = (i / bands) * 2 * math.pi
+                x1 = center_x + math.cos(angle) * radius
+                y1 = center_y + math.sin(angle) * radius
+                x2 = center_x + math.cos(angle) * (radius + mag * radius)
+                y2 = center_y + math.sin(angle) * (radius + mag * radius)
+                painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+        elif self._style_index == 3:
+            # line spectrum
+            pen = QPen(self._bar_color)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            points = []
+            for i, mag in enumerate(mags):
+                x = int((i / (bands - 1)) * w) if bands > 1 else w / 2
+                y = int(h - mag * h)
+                points.append((x, y))
+            for p1, p2 in zip(points, points[1:]):
+                painter.drawLine(p1[0], p1[1], p2[0], p2[1])
+        elif self._style_index == 4:
+            # circles
+            bar_width = w / bands if bands else w
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(self._bar_color))
+            for i, mag in enumerate(mags):
+                cx = (i + 0.5) * bar_width
+                cy = h / 2
+                radius = mag * min(bar_width, h) * 0.5
+                painter.drawEllipse(int(cx - radius), int(cy - radius), int(radius * 2), int(radius * 2))
         painter.end() 
