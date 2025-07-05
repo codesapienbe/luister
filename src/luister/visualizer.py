@@ -19,7 +19,7 @@ except ImportError:
 import math
 import random
 from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
 class VisualizerWidget(QWidget):
@@ -36,6 +36,9 @@ class VisualizerWidget(QWidget):
         # visual styles
         self._style_index = 0
         self._num_styles = 5
+        # sensitivity settings to suppress low-level noise
+        self._sensitivity_threshold = 0.2
+        self._sensitivity_exponent = 0.5
 
     def set_audio(self, file_path: str):
         """Load file_path with librosa and pre-compute magnitude per band."""
@@ -78,12 +81,19 @@ class VisualizerWidget(QWidget):
     def paintEvent(self, event):
         if self._magnitudes is None:
             return
-        mags_all = self._magnitudes  # type: ignore
+        # get raw magnitude data and apply sensitivity mapping
+        raw_mags = self._magnitudes  # type: ignore
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width()
         h = self.height()
-        mags = mags_all[self._current_index]
+        # map raw magnitudes to [0,1] after threshold and exponent
+        idx = self._current_index
+        raw = raw_mags[idx]
+        # linear threshold
+        proc = np.clip((raw - self._sensitivity_threshold) / (1.0 - self._sensitivity_threshold), 0.0, 1.0)
+        # non-linear curve
+        mags = proc ** self._sensitivity_exponent
         bands = len(mags)
         # style-based rendering
         if self._style_index == 0:
@@ -96,14 +106,21 @@ class VisualizerWidget(QWidget):
                 color.setAlphaF(max(0.2, mag))
                 painter.fillRect(rect, color)
         elif self._style_index == 1:
-            # horizontal bars
-            bar_height = h / bands if bands else h
+            # area under spectrum curve
+            path = QPainterPath()
+            # start at bottom-left
+            path.moveTo(0, h)
+            # draw curve across top of bars
             for i, mag in enumerate(mags):
-                bar_w = mag * w
-                rect = QRect(0, int(i * bar_height), int(bar_w), int(bar_height * 0.8))
-                color = QColor(self._bar_color)
-                color.setAlphaF(max(0.2, mag))
-                painter.fillRect(rect, color)
+                x = (i / (bands - 1)) * w if bands > 1 else w / 2
+                y = h - mag * h
+                path.lineTo(x, y)
+            # close path at bottom-right
+            path.lineTo(w, h)
+            path.closeSubpath()
+            color = QColor(self._bar_color)
+            color.setAlphaF(0.6)
+            painter.fillPath(path, color)
         elif self._style_index == 2:
             # radial lines
             center_x, center_y = w / 2, h / 2
