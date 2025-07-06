@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow,
     QApplication,
+    QWidget,
     QPushButton,
     QStyle,
     QSlider,
@@ -10,7 +11,6 @@ from PyQt6.QtWidgets import (
     QLCDNumber,
     QSystemTrayIcon,
 )
-from PyQt6.uic import loadUi  # type: ignore
 from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer
 from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QTransform, QPixmap
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
@@ -65,8 +65,64 @@ class UI(QMainWindow):
 
         # Resolve resources relative to package directory
         base_path = Path(__file__).resolve().parent
-        ui_path = base_path / 'player.ui'
-        loadUi(str(ui_path), self)
+
+        # --- Build main window UI programmatically (Designer-free) ---
+        central = QWidget(self)
+        self.setCentralWidget(central)
+
+        # Buttons
+        def _mk_btn(name: str, x: int, y: int, w: int, h: int) -> QPushButton:
+            btn = QPushButton(central)
+            btn.setObjectName(name)
+            btn.setGeometry(x, y, w, h)
+            return btn
+
+        _mk_btn("back_btn", 20, 144, 41, 41)
+        _mk_btn("play_btn", 63, 144, 41, 41)
+        _mk_btn("pause_btn", 106, 144, 41, 41)
+        _mk_btn("stop_btn", 149, 144, 41, 41)
+        _mk_btn("next_btn", 193, 144, 41, 41)
+        _mk_btn("download_btn", 257, 144, 46, 38)
+        _mk_btn("shuffle_btn", 340, 150, 121, 25)
+        _mk_btn("loop_btn", 470, 150, 61, 25)
+        eq_btn = QPushButton("EQ", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(470, 70, 51, 25)
+        pl_btn = QPushButton("PL", central); pl_btn.setObjectName("pl_btn"); pl_btn.setGeometry(530, 70, 51, 25)
+
+        # Sliders
+        time_slider = QSlider(Qt.Orientation.Horizontal, central)
+        time_slider.setObjectName("time_slider")
+        time_slider.setGeometry(20, 109, 561, 21)
+
+        volume_slider = QSlider(Qt.Orientation.Horizontal, central)
+        volume_slider.setObjectName("volume_slider")
+        volume_slider.setGeometry(200, 80, 131, 16)
+
+        # Displays
+        time_lcd = QTextEdit(central)
+        time_lcd.setObjectName("time_lcd")
+        time_lcd.setGeometry(20, 10, 161, 81)
+        time_lcd.setReadOnly(True)
+
+        title_lcd = QTextEdit(central)
+        title_lcd.setObjectName("title_lcd")
+        title_lcd.setGeometry(210, 10, 371, 21)
+        title_lcd.setReadOnly(True)
+
+        kbps_lcd = QLCDNumber(central)
+        kbps_lcd.setObjectName("lcdNumber_3")
+        kbps_lcd.setGeometry(200, 50, 31, 23)
+
+        khz_lcd = QLCDNumber(central)
+        khz_lcd.setObjectName("lcdNumber_4")
+        khz_lcd.setGeometry(280, 50, 31, 23)
+
+        # End of manual UI build
+        self.resize(620, 230)  # match original designer size
+
+        # initial LCD text (replicates old HTML)
+        time_lcd.setPlainText('▶    00:00')
+        time_lcd.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         icon_path = base_path.parent / 'img' / 'icon.png'
         self.setWindowIcon(QIcon(str(icon_path)))
 

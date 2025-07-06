@@ -1,13 +1,13 @@
+import sys
 from PyQt6.QtWidgets import (
     QMainWindow,
     QApplication,
+    QWidget,
+    QVBoxLayout,
     QPushButton,
     QListWidget,
     QTextEdit,
 )
-from PyQt6.uic import loadUi  # type: ignore
-from pathlib import Path
-import sys
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
 from PyQt6.QtGui import QDropEvent
 
@@ -63,57 +63,41 @@ class PlaylistUI(QMainWindow):
         super().__init__(parent=main_window)
         self.main_window = main_window
 
-        # Load the ui file
-        base_path = Path(__file__).resolve().parent
-        ui_path = base_path / 'playlist.ui'
-        loadUi(str(ui_path), self)
+        # --- Build UI programmatically (Designer-free) ---
+        self.setWindowTitle("Playlist")
+        self.setObjectName("winamp_playlist")
 
-        # remove designer inline styles so palette stylesheet applies
-        self._clear_inline_styles()
+        central = QWidget(self)
+        self.setCentralWidget(central)
 
-        # Define widgets
-        # Buttons
-        self.pl_back_btn = self.findChild(QPushButton, "pl_back_btn")
-        self.pl_play_btn = self.findChild(QPushButton, "pl_play_btn")
-        self.pl_pause_btn = self.findChild(QPushButton, "pl_pause_btn")
-        self.pl_stop_btn = self.findChild(QPushButton, "pl_stop_btn")
-        self.pl_next_btn = self.findChild(QPushButton, "pl_next_btn")
-        self.pl_download_btn = self.findChild(QPushButton, "pl_download_btn")
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        # Hide all control buttons to simplify UI
-        for w in (
-            self.pl_back_btn,
-            self.pl_play_btn,
-            self.pl_pause_btn,
-            self.pl_stop_btn,
-            self.pl_next_btn,
-            self.pl_download_btn,
-        ):
-            if w is not None:
-                w.hide()
-
-        # Replace placeholder list widget with drag-drop capable one
-        placeholder = self.findChild(QListWidget, 'list_songs')
+        # Drag-and-drop capable song list
         self.list_songs = SongListWidget(self)
-        self.list_songs.setObjectName('list_songs')
-        # Insert into UI layout at the same position
-        if placeholder is not None:
-            parent_layout = placeholder.parent().layout() if placeholder.parent() else None  # type: ignore[attr-defined]
-            if parent_layout is not None:
-                idx = parent_layout.indexOf(placeholder)
-                parent_layout.removeWidget(placeholder)
-                placeholder.deleteLater()
-                parent_layout.insertWidget(idx, self.list_songs)
-            else:
-                # Fallback: no layout, just mimic geometry
-                self.list_songs.setGeometry(placeholder.geometry())
-                placeholder.setParent(None)
-                placeholder.deleteLater()
+        self.list_songs.setObjectName("list_songs")
+        layout.addWidget(self.list_songs, stretch=1)
 
-        # Text display no longer needed
-        self.time_song_text = self.findChild(QTextEdit, 'time_song_text')
-        if self.time_song_text is not None:
-            self.time_song_text.hide()
+        # Optional time display area (mirrors old UI element)
+        self.time_song_text = QTextEdit(self)
+        self.time_song_text.setObjectName("time_song_text")
+        self.time_song_text.setFixedHeight(24)
+        self.time_song_text.setEnabled(False)
+        layout.addWidget(self.time_song_text)
+
+        # Placeholder transport buttons kept for API compatibility (hidden)
+        self.pl_back_btn = QPushButton("⏪", self)
+        self.pl_play_btn = QPushButton("▶️", self)
+        self.pl_pause_btn = QPushButton("⏸️", self)
+        self.pl_stop_btn = QPushButton("⏹", self)
+        self.pl_next_btn = QPushButton("⏩", self)
+        self.pl_download_btn = QPushButton("⏏️", self)
+        for _btn in (self.pl_back_btn, self.pl_play_btn, self.pl_pause_btn, self.pl_stop_btn, self.pl_next_btn, self.pl_download_btn):
+            _btn.hide()
+
+        # Ensure stylesheet cleans any inline defaults
+        self._clear_inline_styles()
 
         self.show()
 
