@@ -18,7 +18,7 @@ except ImportError:
 
 import math
 import random
-from PyQt6.QtCore import QRect, Qt, QPointF
+from PyQt6.QtCore import QRect, Qt, QPointF, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
@@ -41,6 +41,14 @@ class VisualizerWidget(QWidget):
         self._sensitivity_exponent = 0.5
         self._duplication_count = 3  # Number of element copies
         self._spread_factor = 0.15   # Coordinate spread percentage
+        # rotation animation
+        self._rotation_angle = 0.0
+        self._rotation_speed = 1.0  # degrees per frame
+        self._rotation_timer = QTimer(self)
+        self._rotation_timer.timeout.connect(self._increment_rotation)
+        self._rotation_timer.start(30)  # ~33 FPS
+        # random color palette cache
+        self._color_cache = [self._random_color() for _ in range(256)]
 
     def set_audio(self, file_path: str):
         """Load file_path with librosa and pre-compute magnitude per band."""
@@ -97,6 +105,11 @@ class VisualizerWidget(QWidget):
         # non-linear curve
         mags = proc ** self._sensitivity_exponent
         bands = len(mags)
+        # apply global rotation transform for fancy effect
+        painter.translate(w / 2, h / 2)
+        painter.rotate(self._rotation_angle)
+        painter.translate(-w / 2, -h / 2)
+
         # style-based rendering
         if self._style_index == 0:
             # vertical bars with ghosting effect
@@ -106,7 +119,9 @@ class VisualizerWidget(QWidget):
                     offset = (dup + 1) * w * 0.01
                     height = int((magnitude ** self._sensitivity_exponent) * h * 0.6 * (0.8 ** dup))
                     alpha = int(255 * (0.6 ** dup))
-                    painter.setBrush(QColor(255, 163 + dup*30, 25, alpha))
+                    color = self._color_cache[(i+dup) % len(self._color_cache)]
+                    color.setAlpha(alpha)
+                    painter.setBrush(color)
                     painter.drawRect(
                         int(bar_width * i + offset),
                         h - height,
@@ -142,18 +157,19 @@ class VisualizerWidget(QWidget):
                     path.lineTo(x, y)
                 
                 path.lineTo(w, h)
-                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                col = self._random_color(50 // dup)
+                painter.fillPath(path, col)
                 # horizontal mirror of the filled area
                 painter.save()
                 painter.translate(w, 0)
                 painter.scale(-1, 1)
-                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                painter.fillPath(path, col)
                 painter.restore()
                 # vertical mirror of the filled area
                 painter.save()
                 painter.translate(0, h)
                 painter.scale(1, -1)
-                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                painter.fillPath(path, col)
                 painter.restore()
         elif self._style_index == 2:
             # radial lines with positional offsets and rotational duplication
@@ -172,6 +188,8 @@ class VisualizerWidget(QWidget):
                             c.x() + line_length * math.cos(rad),
                             c.y() + line_length * math.sin(rad)
                         )
+                        pen = QPen(self._random_color())
+                        painter.setPen(pen)
                         painter.drawLine(c, end_point)
         elif self._style_index == 3:
             # line spectrum with parallel echoes
@@ -185,6 +203,7 @@ class VisualizerWidget(QWidget):
                     path.lineTo(x, y)
                     if dup > 0:
                         path.addEllipse(x, y, 3 + dup*2, 3 + dup*2)
+                painter.setPen(QPen(self._random_color()))
                 painter.drawPath(path)
                 # horizontal mirror of the spectrum path
                 painter.save()
@@ -217,6 +236,16 @@ class VisualizerWidget(QWidget):
                             * magnitude
                         )
                         alpha = int(255 * (0.7 ** dup))
-                        painter.setBrush(QColor(255, 25, 163, alpha // 2))
+                        col = self._random_color(alpha // 2)
+                        painter.setBrush(col)
                         painter.drawEllipse(c, radius, radius)
-        painter.end() 
+        painter.end()
+
+    def _increment_rotation(self):
+        self._rotation_angle = (self._rotation_angle + self._rotation_speed) % 360
+        self.update()
+
+    def _random_color(self, alpha: int = 255) -> QColor:
+        """Return a bright random color."""
+        hue = random.randint(0, 359)
+        return QColor.fromHsv(hue, 255, 255, alpha) 

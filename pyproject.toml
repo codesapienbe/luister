@@ -10,14 +10,12 @@ authors = [
     {name = "Yilmaz Mustafa", email = "ymus@tuta.io"}
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio :: Players",
@@ -33,7 +31,7 @@ dependencies = [
     "numpy>=1.20.0",
     "pydub>=0.25.1",
     "pyaudio>=0.2.11",
-    "pyinstaller>=6.15.0",
+    "pyinstaller>=6.0.0,<6.15.0",
 ]
 
 [project.optional-dependencies]

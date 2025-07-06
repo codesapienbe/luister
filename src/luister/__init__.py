@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon,
 )
 from PyQt6.uic import loadUi  # type: ignore
-from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice
-from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette
+from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer
+from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QTransform, QPixmap
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 import sys
 from pathlib import Path
@@ -320,6 +320,13 @@ QSlider::handle:horizontal {{
         self.tray_icon = QSystemTrayIcon(tray_icon(), self)  # type: ignore
         self.tray_icon.activated.connect(self._on_tray_activated)  # type: ignore
         self.tray_icon.show()
+
+        # tray icon rotating animation
+        self._tray_base_icon = tray_icon()
+        self._tray_rotation_angle = 0
+        self._tray_timer = QTimer(self)
+        self._tray_timer.timeout.connect(self._rotate_tray_icon)
+        self._tray_timer.start(100)  # 10 FPS
 
     def set_Enabled_button(self):
         if not self.playlist_urls:
@@ -836,6 +843,19 @@ QSlider::handle:horizontal {{
                         self.visualizer.show()
                     if self.lyrics:
                         self.lyrics.show()
+        except Exception:
+            pass
+
+    # ---- tray icon rotation helper ----
+    def _rotate_tray_icon(self):
+        try:
+            size = 32
+            orig_pix = self._tray_base_icon.pixmap(size, size)
+            transform = QTransform()
+            transform.rotate(self._tray_rotation_angle)
+            rotated_pix = orig_pix.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+            self.tray_icon.setIcon(QIcon(rotated_pix))  # type: ignore[arg-type]
+            self._tray_rotation_angle = (self._tray_rotation_angle + 10) % 360
         except Exception:
             pass
 
