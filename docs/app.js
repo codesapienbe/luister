@@ -479,3 +479,14 @@ window.addEventListener('load', () => {
         });
     }, 500);
 });
+
+// add switch to toggle dark mode, set the default to system default
+const darkModeToggle = document.getElementById('darkModeToggle');
+darkModeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    if (document.body.classList.contains('dark-mode')) {
+        document.body.classList.remove('light-mode');
+    } else {
+        document.body.classList.add('light-mode');
+    }
+});

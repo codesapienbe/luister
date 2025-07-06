@@ -57,27 +57,71 @@ class Theme:
         palette = Theme.light() if theme == "light" else Theme.dark()
         app.setPalette(palette)
 
-        # Apply a palette-aware application stylesheet so child widgets inherit
-        # correct colours even if .ui files contained hard-coded styles.
+        # --- Glassmorphic style sheet -------------------------------------------------
+        if theme == "light":
+            glass_bg = "#26FFFFFF"  # ~15% white
+            hover_bg = "#33FFFFFF"  # ~20%
+            pressed_bg = "#4DFFFFFF"  # ~30%
+            border_rgba = "rgba(255,255,255,0.25)"
+            groove_bg = "rgba(0,0,0,0.15)"
+            input_bg = "#40FFFFFF"  # ~25%
+        else:
+            glass_bg = "#33FFFFFF"  # ~20% white on dark
+            hover_bg = "#26FFFFFF"  # slightly less opaque
+            pressed_bg = "#4DFFFFFF"
+            border_rgba = "rgba(255,255,255,0.15)"
+            groove_bg = "rgba(255,255,255,0.10)"
+            input_bg = "#26FFFFFF"  # for dark inputs
+
         app.setStyleSheet(
-            """
-            /* Basic text and window */
-            QWidget { background-color: palette(window); color: palette(window-text); }
+            f"""
+            /* ----- Base glass container ----- */
+            QWidget {{
+                background-color: {glass_bg};
+                color: palette(window-text);
+                border: 1px solid {border_rgba};
+                border-radius: 12px;
+            }}
+
+            /* Top-level windows */
+            QMainWindow {{
+                background-color: {glass_bg};
+                border: 1px solid {border_rgba};
+                border-radius: 16px;
+            }}
 
             /* Buttons */
-            QPushButton { background-color: palette(button); color: palette(button-text); }
-            QPushButton:disabled { color: palette(mid); }
+            QPushButton {{
+                background-color: transparent;
+                color: palette(button-text);
+                border: 1px solid {border_rgba};
+                border-radius: 8px;
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{ background-color: {hover_bg}; }}
+            QPushButton:pressed {{ background-color: {pressed_bg}; }}
+            QPushButton:disabled {{ color: palette(mid); }}
 
-            /* Inputs */
-            QTextEdit, QListWidget, QLineEdit {
-                background-color: palette(base);
+            /* Text inputs & lists */
+            QTextEdit, QListWidget, QLineEdit {{
+                background-color: {input_bg};
                 color: palette(text);
+                border: 1px solid {border_rgba};
+                border-radius: 8px;
                 selection-background-color: palette(highlight);
                 selection-color: palette(highlighted-text);
-            }
+            }}
 
             /* Sliders */
-            QSlider::groove:horizontal { background: palette(mid); }
-            QSlider::handle:horizontal { background: palette(button); }
+            QSlider::groove:horizontal {{
+                background: {groove_bg};
+                height: 4px;
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: palette(highlight);
+                width: 14px;
+                border-radius: 7px;
+            }}
             """
         ) 
