@@ -28,28 +28,18 @@ A modern, Python-powered media player inspired by the classics.
 
 ## <a name="luister-features"></a>Luister Features
 
+<center><img alt='luister app screenshot' src='media/appshot.jpeg'></center>
+
 Luister brings the spirit of classic media players into the Python era, with a sleek interface and all the features you expect:
 
 - **Playlist Management:**  
   Easily add your favorite songs to the playlist. If the playlist is empty, playback controls are disabled to keep things tidy.
 
-  <center><img alt="player1" src="https://user-images.githubusercontent.com/97242088/210106051-17e6ff27-8988-44a1-92ba-56689c57b4ef.png"></center>
-
 - **Simple Song Selection:**  
   Click the 'arrow up' button to open a file dialog. Select your music files (hold Ctrl to select multiple), and hit 'Open'. The playlist window will appear automatically.
 
-  <center><img alt='add_files' src='https://user-images.githubusercontent.com/97242088/210106049-7531e769-bb56-4ab8-8e4d-320f5f3893f1.png'></center>
-
 - **Intuitive Controls:**  
-  Once your playlist is loaded, all controls become active:
-
-  | Button | Function |
-  |--------|----------|
-  | <img src="https://img.icons8.com/fluency-systems-filled/48/null/chevron-left--v2.png" height='20' width='20'/> | Previous song |
-  | <img src="https://img.icons8.com/ios-glyphs/30/null/play--v1.png" height='20' width='20'/> | Play |
-  | <img src="https://img.icons8.com/ios-glyphs/30/null/pause--v1.png" height='20' width='20'/> | Pause |
-  | <img src="https://img.icons8.com/ios-filled/50/null/stop.png" height='20' width='20'/> | Stop (resets to start) |
-  | <img src="https://img.icons8.com/external-others-inmotus-design/67/null/external-Right-basic-web-ui-elements-others-inmotus-design-2.png" height='20' width='20'/> | Next song |
+  Once your playlist is loaded, all controls become active.
 
 - **Now Playing Display:**  
   The left LCD shows the current time; the right displays the song title and duration.
@@ -61,15 +51,11 @@ Luister brings the spirit of classic media players into the Python era, with a s
   - Shuffle: Randomizes your playlist order for a fresh experience.
   - Loop: Repeats the playlist when it ends.
 
-  <center><img alt="song" src="https://user-images.githubusercontent.com/97242088/210106053-f152ab86-bd4a-4d5f-80f4-23ad4c7c07a3.png"></center>
-
 - **Direct Song Selection:**  
   Click any song in the playlist to play it instantly.
 
 - **Flexible Windows:**  
   The main player and playlist window can be used independently—close one and keep the other open!
-
-  <center><img alt="song2" src="https://user-images.githubusercontent.com/97242088/210106054-1f8b6b43-2df8-43e6-a76c-c0f1354c9248.png"></center>
 
 ---
 

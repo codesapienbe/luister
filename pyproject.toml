@@ -31,6 +31,7 @@ dependencies = [
     "numpy>=1.20.0",
     "pydub>=0.25.1",
     "pyaudio>=0.2.11",
+    "yt-dlp>=2023.0.0",
     "pyinstaller>=6.0.0,<6.15.0",
 ]
 

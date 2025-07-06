@@ -10,11 +10,17 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QLCDNumber,
     QSystemTrayIcon,
+    QInputDialog,
+    QProgressBar,
 )
-from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer
+from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QTransform, QPixmap
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 import sys
+import subprocess
+import re
+import os
+import tempfile
 from pathlib import Path
 from luister.utils import get_html, convert_duration_to_show
 from luister.views import PlaylistUI
@@ -115,6 +121,13 @@ class UI(QMainWindow):
         khz_lcd = QLCDNumber(central)
         khz_lcd.setObjectName("lcdNumber_4")
         khz_lcd.setGeometry(280, 50, 31, 23)
+
+        # YouTube download progress bar
+        self.yt_progress = QProgressBar(central)
+        self.yt_progress.setObjectName("yt_progress")
+        self.yt_progress.setGeometry(20, 190, 561, 12)
+        self.yt_progress.setRange(0, 0)  # indeterminate
+        self.yt_progress.hide()
 
         # End of manual UI build
         self.resize(620, 230)  # match original designer size
@@ -414,6 +427,7 @@ QSlider::handle:horizontal {{
         else:
             return
         self.play_current()
+        self._update_playlist_selection()
 
     # play/stop toggle via single button
     @log_call()
@@ -453,36 +467,67 @@ QSlider::handle:horizontal {{
         else:
             return
         self.play_current()
+        self._update_playlist_selection()
 
     #download list of music
     @log_call()
     def download(self):
         try:
-            # Ask user for a directory first; if cancelled, fall back to files
-            dir_path = QFileDialog.getExistingDirectory(self, 'Select music directory')
+            # Prompt for URL first; empty string -> fall back to local
+            url, ok = QInputDialog.getText(self, "Add from YouTube or local", "Paste YouTube URL (leave blank for local files):")
+            if ok and url.strip():
+                url = url.strip()
+                # Basic YouTube URL validation
+                yt_match = re.match(r"https?://(www\.)?(youtube\.com|youtu\.be)/.+", url)
+                if yt_match:
+                    # Determine output directory (temporary download folder)
+                    output_dir = Path.home() / ".luister" / "downloads"
+                    # Start download thread
+                    self.title_lcd.setPlainText("Downloading from YouTube…")
+                    self.yt_progress.show()
+                    self._yt_thread = YTDownloadThread(url, output_dir)
+                    self._yt_thread.finished.connect(self._on_ytdl_finished)
+                    self._yt_thread.start()
+                    return
+                else:
+                    self.title_lcd.setPlainText("Invalid YouTube URL")
+                    return
 
-            selected_files = []
+            # If no URL provided, ask for directory or files
+            dir_path = QFileDialog.getExistingDirectory(self, 'Select music directory')
+            selected_files: list[str] = []
             if dir_path:
-                # Collect common audio files inside directory (non-recursive)
+                # Persist playlist directory
+                self._persist_playlist_dir(dir_path)
                 audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
                 for p in Path(dir_path).iterdir():
                     if p.suffix.lower() in audio_exts and p.is_file():
                         selected_files.append(str(p))
             else:
-                # Fall back to picking individual files
                 files, _ = QFileDialog.getOpenFileNames(self, 'Select songs')
                 selected_files.extend(files)
 
             if selected_files:
-                # ensure playlist exists and is visible
                 self._ensure_playlist()
                 if not self.ui.isVisible():
                     self.ui.show()
-                self._add_files(selected_files)
+                self._add_files(selected_files, replace=True)
             else:
-                self.title_lcd.setPlainText('No audio files found in selected directory')
+                self.title_lcd.setPlainText('No audio files selected')
         except Exception as e:
             self.title_lcd.setPlainText(f'Error: {e}')
+
+    def _on_ytdl_finished(self, files: list):  # noqa: D401
+        if not files:
+            self.yt_progress.hide()
+            self.title_lcd.setPlainText('YouTube download failed')
+            return
+        # Add downloaded files and play first
+        self._add_files(files, replace=True)
+        self.current_index = len(self.playlist_urls) - len(files)
+        self.play_current()
+        self.yt_progress.hide()
+        self._update_playlist_selection()
 
     def set_volume(self, value):
         # Qt6 handles volume via QAudioOutput (0.0 - 1.0)
@@ -608,11 +653,15 @@ QSlider::handle:horizontal {{
             self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
 
         # highlight currently playing song
-        if 0 <= self.current_index < len(self.playlist_urls):
-            current_item = self.ui.list_songs.item(self.current_index)
-            if current_item is not None:
-                self.ui.list_songs.setCurrentItem(current_item)
-                self.ui.list_songs.scrollToItem(current_item)
+        self._update_playlist_selection()
+
+    def _update_playlist_selection(self):
+        """Ensure the playlist list widget selects & centres current_index."""
+        if not hasattr(self, "ui"):
+            return
+        if 0 <= self.current_index < self.ui.list_songs.count():
+            self.ui.list_songs.setCurrentRow(self.current_index)
+            self.ui.list_songs.scrollToItem(self.ui.list_songs.currentItem())
 
     @log_call()
     def toggle_playlist(self):
@@ -641,6 +690,10 @@ QSlider::handle:horizontal {{
         """Start playback of the current index."""
         if 0 <= self.current_index < len(self.playlist_urls):
             current_url = self.playlist_urls[self.current_index]
+
+            # persist playing state for future features
+            self._persist_playing_state(current_url.toLocalFile())
+
             self.Player.setSource(current_url)
             # if lyrics view is visible and no cached segments yet, wait
             if self.lyrics and self.lyrics.isVisible():
@@ -673,11 +726,7 @@ QSlider::handle:horizontal {{
             self.title_lcd.setPlainText(text)
             if hasattr(self, 'ui'):
                 self.ui.time_song_text.setPlainText('00:00')
-                # select & center current song in playlist view
-                item = self.ui.list_songs.item(self.current_index)
-                if item is not None:
-                    self.ui.list_songs.setCurrentItem(item)
-                    self.ui.list_songs.scrollToItem(item)
+                self._update_playlist_selection()
 
     @log_call()
     def handle_dropped_urls(self, urls):
@@ -687,15 +736,24 @@ QSlider::handle:horizontal {{
             self._add_files(paths)
 
     @log_call()
-    def _add_files(self, file_paths):
-        """Add a list of local file paths to playlist and UI."""
-        i = len(self.playlist_urls) + 1
-        for fp in file_paths:
+    def _add_files(self, file_paths, replace: bool = False):
+        """Add a list of local file paths to playlist.
+
+        If replace=True the existing in-memory playlist and UI list are cleared first.
+        """
+        if replace:
+            # clear previous state
+            self.playlist_urls.clear()
+            if hasattr(self, 'ui'):
+                self.ui.list_songs.clear()
+            self.current_index = -1
+
+        start_index = len(self.playlist_urls) + 1
+        for idx, fp in enumerate(file_paths, start=start_index):
             url = QUrl.fromLocalFile(fp)
             self.playlist_urls.append(url)
             if hasattr(self, 'ui'):
-                self.ui.list_songs.addItem(f"{i}. {Path(fp).name}")
-            i += 1
+                self.ui.list_songs.addItem(f"{idx}. {Path(fp).name}")
         self.set_Enabled_button()
         if self.current_index == -1 and self.playlist_urls:
             self.current_index = 0
@@ -937,6 +995,67 @@ QSlider::handle:horizontal {{
             self._tray_rotation_angle = (self._tray_rotation_angle + 10) % 360
         except Exception:
             pass
+
+    # ---- playing state persistence ----
+
+    def _persist_playing_state(self, file_path: str):
+        try:
+            state_dir = Path.home() / ".luister" / "states"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            playing_file = state_dir / "playing.txt"
+            with open(playing_file, "w", encoding="utf-8") as f:
+                f.write(file_path)
+        except Exception:
+            pass
+
+    def _persist_playlist_dir(self, dir_path: str):
+        try:
+            state_dir = Path.home() / ".luister" / "states"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            playlist_file = state_dir / "playlistdir.txt"
+            with open(playlist_file, "w", encoding="utf-8") as f:
+                f.write(dir_path)
+        except Exception:
+            pass
+
+# ---- YouTube downloader thread ----
+
+
+class YTDownloadThread(QThread):
+    """Background thread that uses yt-dlp to fetch audio files from YouTube."""
+
+    finished = pyqtSignal(list)  # list of downloaded file paths
+
+    def __init__(self, url: str, output_dir: Path):
+        super().__init__()
+        self._url = url
+        self._output_dir = output_dir
+
+    def run(self):  # noqa: D401
+        try:
+            self._output_dir.mkdir(parents=True, exist_ok=True)
+            before = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
+
+            # Build yt-dlp command
+            cmd = [
+                "yt-dlp",
+                "-x",  # extract audio
+                "--audio-format", "mp3",
+                "--prefer-ffmpeg",
+                "--embed-thumbnail",
+                "--no-colors",
+                "--output",
+                str(self._output_dir / "%(title)s.%(ext)s"),
+                self._url,
+            ]
+
+            subprocess.run(cmd, check=False)
+
+            after = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
+            new_files = [str(p) for p in sorted(after - before)]
+            self.finished.emit(new_files)
+        except Exception:
+            self.finished.emit([])
 
 def main():
     app = QApplication(sys.argv)
