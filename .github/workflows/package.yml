@@ -40,7 +40,7 @@ jobs:
 
       - name: Install FFmpeg on Windows
         if: matrix.os == 'windows-latest'
-        uses: FedericoCarboni/setup-ffmpeg@v4
+        uses: FedericoCarboni/setup-ffmpeg@v3
 
       - name: Install UV CLI and project dependencies
         run: |

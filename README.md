@@ -89,7 +89,7 @@ cd luister
 ### 2. Run the App
 
 ```
-uv run luister
+uvx run --from https://github.com/codesapienbe/luister/releases/download/v2025.07.06.1321/luister-0.1.0-py3-none-any.whl
 ```
 
 No extra commands needed! The app will launch, and you can start enjoying your music right away.
