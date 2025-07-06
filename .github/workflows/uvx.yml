@@ -1,0 +1,63 @@
+name: Build & Publish Wheel for UVX
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-wheel:
+    name: Build wheel (pyproject)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PortAudio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
+      - name: Install uv & build backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv build
+      - name: Sync dependencies (prod only)
+        run: uv sync
+      - name: Build wheel and sdist
+        run: python -m build --sdist --wheel --outdir dist
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luister-dist
+          path: dist/*
+      # Auto-create date-based tag & release on main branch
+      - name: Generate version string
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: get_date
+        run: echo "date=v$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ steps.get_date.outputs.date }}
+          release_name: Release ${{ steps.get_date.outputs.date }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach wheel assets to the release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_date.outputs.date }}
+          files: dist/*
