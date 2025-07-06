@@ -33,7 +33,6 @@ dependencies = [
     "numpy>=1.20.0",
     "pydub>=0.25.1",
     "pyaudio>=0.2.11",
-    "uvx>=0.1.0",
     "pyinstaller>=6.15.0",
 ]
 
