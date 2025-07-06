@@ -332,21 +332,46 @@ QSlider::handle:horizontal {{
         self.show()
 
         # --- create & show playlist under main window ---
-        self._ensure_playlist()
-        # restore last playlist from config
+        # Try to load last playlist dir from global state
+        last_dir = None
+        try:
+            state_dir = Path.home() / ".luister" / "states"
+            playlist_file = state_dir / "playlistdir.txt"
+            if playlist_file.exists():
+                last_dir = playlist_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+
+        if last_dir and Path(last_dir).is_dir():
+            audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
+            files = [str(p) for p in Path(last_dir).iterdir() if p.suffix.lower() in audio_exts and p.is_file()]
+            if files:
+                self._add_files(files, replace=True, play_on_load=False)
+        else:
+            self._ensure_playlist()
+
+        # --- restore GUI state (visualizer/lyrics) ---
+        gui_state = self._load_gui_state()
+        if gui_state.get("visualizer") == "1":
+            self._ensure_visualizer()
+            if self.visualizer:
+                self.visualizer.show()
+        if gui_state.get("lyrics") == "1":
+            self._ensure_lyrics()
+            if self.lyrics:
+                self.lyrics.show()
+
+        # restore last playlist from config (legacy)
         last_paths = self._config.get("last_playlist", [])
-        if last_paths:
-            # clear existing playlist
+        if last_paths and not self.playlist_urls:
             self.playlist_urls.clear()
             self.ui.list_songs.clear()
             for p in last_paths:
                 url = QUrl.fromLocalFile(p)
                 self.playlist_urls.append(url)
-            # repopulate UI list
             for i, url in enumerate(self.playlist_urls, 1):
                 self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
             self.set_Enabled_button()
-            # restore last index
             last_idx = self._config.get("last_index", 0)
             if 0 <= last_idx < len(self.playlist_urls):
                 self.current_index = last_idx
@@ -355,8 +380,9 @@ QSlider::handle:horizontal {{
                     self.ui.list_songs.setCurrentItem(item)
                     self.ui.list_songs.scrollToItem(item)
 
-        self.ui.show()
-        self._stack_playlist_below()
+        if hasattr(self, "ui"):
+            self.ui.show()
+            self._stack_playlist_below()
 
         # track window move/resize to keep playlist docked
         self.installEventFilter(self)
@@ -736,10 +762,11 @@ QSlider::handle:horizontal {{
             self._add_files(paths)
 
     @log_call()
-    def _add_files(self, file_paths, replace: bool = False):
+    def _add_files(self, file_paths, replace: bool = False, play_on_load: bool = True):
         """Add a list of local file paths to playlist.
 
         If replace=True the existing in-memory playlist and UI list are cleared first.
+        If play_on_load is True, playback starts after loading (default True).
         """
         if replace:
             # clear previous state
@@ -757,7 +784,8 @@ QSlider::handle:horizontal {{
         self.set_Enabled_button()
         if self.current_index == -1 and self.playlist_urls:
             self.current_index = 0
-            self.play_current()
+            if play_on_load:
+                self.play_current()
 
     def set_theme(self, name: str):
         if getattr(self, "_current_theme", None) == name:
@@ -948,6 +976,8 @@ QSlider::handle:horizontal {{
             self.update_play_stop_icon()
 
     def closeEvent(self, event):  # override close to hide windows instead of exit
+        # Save GUI state
+        self._persist_gui_state()
         event.ignore()
         # hide main and all child windows
         self.hide()
@@ -958,6 +988,32 @@ QSlider::handle:horizontal {{
         if self.lyrics and self.lyrics.isVisible():
             self.lyrics.hide()
         # keep tray icon active
+
+    def _persist_gui_state(self):
+        try:
+            state_dir = Path.home() / ".luister" / "states"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            gui_file = state_dir / "gui.txt"
+            visualizer = "1" if self.visualizer and self.visualizer.isVisible() else "0"
+            lyrics = "1" if self.lyrics and self.lyrics.isVisible() else "0"
+            with open(gui_file, "w", encoding="utf-8") as f:
+                f.write(f"visualizer={visualizer}\nlyrics={lyrics}\n")
+        except Exception:
+            pass
+
+    def _load_gui_state(self):
+        state = {"visualizer": "0", "lyrics": "0"}
+        try:
+            state_dir = Path.home() / ".luister" / "states"
+            gui_file = state_dir / "gui.txt"
+            if gui_file.exists():
+                for line in gui_file.read_text(encoding="utf-8").splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        state[k.strip()] = v.strip()
+        except Exception:
+            pass
+        return state
 
     def _on_tray_activated(self, reason):
         """Toggle app windows on tray icon click."""
