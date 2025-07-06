@@ -18,7 +18,7 @@ except ImportError:
 
 import math
 import random
-from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtCore import QRect, Qt, QPointF
 from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
@@ -39,6 +39,8 @@ class VisualizerWidget(QWidget):
         # sensitivity settings to suppress low-level noise
         self._sensitivity_threshold = 0.2
         self._sensitivity_exponent = 0.5
+        self._duplication_count = 3  # Number of element copies
+        self._spread_factor = 0.15   # Coordinate spread percentage
 
     def set_audio(self, file_path: str):
         """Load file_path with librosa and pre-compute magnitude per band."""
@@ -97,64 +99,124 @@ class VisualizerWidget(QWidget):
         bands = len(mags)
         # style-based rendering
         if self._style_index == 0:
-            # vertical bars
+            # vertical bars with ghosting effect
             bar_width = w / bands if bands else w
-            for i, mag in enumerate(mags):
-                bar_h = mag * h
-                rect = QRect(int(i * bar_width), int(h - bar_h), int(bar_width * 0.8), int(bar_h))
-                color = QColor(self._bar_color)
-                color.setAlphaF(max(0.2, mag))
-                painter.fillRect(rect, color)
+            for i, magnitude in enumerate(mags):
+                for dup in range(self._duplication_count):
+                    offset = (dup + 1) * w * 0.01
+                    height = int((magnitude ** self._sensitivity_exponent) * h * 0.6 * (0.8 ** dup))
+                    alpha = int(255 * (0.6 ** dup))
+                    painter.setBrush(QColor(255, 163 + dup*30, 25, alpha))
+                    painter.drawRect(
+                        int(bar_width * i + offset),
+                        h - height,
+                        int(bar_width * 0.6),
+                        height
+                    )
+                    # horizontally mirrored duplicate
+                    mirror_x = w - (bar_width * i + offset) - int(bar_width * 0.6)
+                    painter.drawRect(
+                        int(mirror_x),
+                        h - height,
+                        int(bar_width * 0.6),
+                        height
+                    )
+                    # vertically flipped duplicate (drawn from top)
+                    painter.drawRect(
+                        int(bar_width * i + offset),
+                        0,
+                        int(bar_width * 0.6),
+                        height
+                    )
         elif self._style_index == 1:
-            # area under spectrum curve
-            path = QPainterPath()
-            # start at bottom-left
-            path.moveTo(0, h)
-            # draw curve across top of bars
-            for i, mag in enumerate(mags):
-                x = (i / (bands - 1)) * w if bands > 1 else w / 2
-                y = h - mag * h
-                path.lineTo(x, y)
-            # close path at bottom-right
-            path.lineTo(w, h)
-            path.closeSubpath()
-            color = QColor(self._bar_color)
-            color.setAlphaF(0.6)
-            painter.fillPath(path, color)
+            # filled area with multiple reflection layers
+            for dup in range(1, self._duplication_count + 1):
+                path = QPainterPath()
+                path.moveTo(0, h)
+                y_offset = dup * 10
+                scale_factor = 1 - (dup * 0.1)
+                
+                for i, magnitude in enumerate(mags):
+                    x = int(i * (w / bands))
+                    y = int(h - (magnitude * h * scale_factor) - y_offset)
+                    path.lineTo(x, y)
+                
+                path.lineTo(w, h)
+                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                # horizontal mirror of the filled area
+                painter.save()
+                painter.translate(w, 0)
+                painter.scale(-1, 1)
+                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                painter.restore()
+                # vertical mirror of the filled area
+                painter.save()
+                painter.translate(0, h)
+                painter.scale(1, -1)
+                painter.fillPath(path, QColor(25, 255, 163, 50 // dup))
+                painter.restore()
         elif self._style_index == 2:
-            # radial lines
-            center_x, center_y = w / 2, h / 2
-            radius = min(w, h) * 0.3
-            pen = QPen(self._bar_color)
-            pen.setWidth(2)
-            painter.setPen(pen)
-            for i, mag in enumerate(mags):
-                angle = (i / bands) * 2 * math.pi
-                x1 = center_x + math.cos(angle) * radius
-                y1 = center_y + math.sin(angle) * radius
-                x2 = center_x + math.cos(angle) * (radius + mag * radius)
-                y2 = center_y + math.sin(angle) * (radius + mag * radius)
-                painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+            # radial lines with positional offsets and rotational duplication
+            center_base = QPointF(self.rect().center())
+            shifts = [
+                (i - self._duplication_count // 2) * w * self._spread_factor
+                for i in range(self._duplication_count)
+            ]
+            centers = [QPointF(center_base.x() + dx, center_base.y()) for dx in shifts]
+            for c in centers:
+                for i, magnitude in enumerate(mags):
+                    line_length = magnitude * min(w, h) * 0.4
+                    for angle in range(0, 360, 360 // (self._duplication_count + 2)):
+                        rad = math.radians(angle + i * 5)
+                        end_point = QPointF(
+                            c.x() + line_length * math.cos(rad),
+                            c.y() + line_length * math.sin(rad)
+                        )
+                        painter.drawLine(c, end_point)
         elif self._style_index == 3:
-            # line spectrum
-            pen = QPen(self._bar_color)
-            pen.setWidth(2)
-            painter.setPen(pen)
-            points = []
-            for i, mag in enumerate(mags):
-                x = int((i / (bands - 1)) * w) if bands > 1 else w / 2
-                y = int(h - mag * h)
-                points.append((x, y))
-            for p1, p2 in zip(points, points[1:]):
-                painter.drawLine(p1[0], p1[1], p2[0], p2[1])
+            # line spectrum with parallel echoes
+            for dup in range(self._duplication_count):
+                y_base = h * (0.2 + 0.1 * dup)
+                path = QPainterPath()
+                path.moveTo(0, y_base)
+                for i, magnitude in enumerate(mags):
+                    x = int(i * (w / bands))
+                    y = y_base - magnitude * h * 0.4
+                    path.lineTo(x, y)
+                    if dup > 0:
+                        path.addEllipse(x, y, 3 + dup*2, 3 + dup*2)
+                painter.drawPath(path)
+                # horizontal mirror of the spectrum path
+                painter.save()
+                painter.translate(w, 0)
+                painter.scale(-1, 1)
+                painter.drawPath(path)
+                painter.restore()
+                # vertical mirror of the spectrum path
+                painter.save()
+                painter.translate(0, h)
+                painter.scale(1, -1)
+                painter.drawPath(path)
+                painter.restore()
         elif self._style_index == 4:
-            # circles
-            bar_width = w / bands if bands else w
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(self._bar_color))
-            for i, mag in enumerate(mags):
-                cx = (i + 0.5) * bar_width
-                cy = h / 2
-                radius = mag * min(bar_width, h) * 0.5
-                painter.drawEllipse(int(cx - radius), int(cy - radius), int(radius * 2), int(radius * 2))
+            # circles with concentric rings at multiple positions
+            center_base = QPointF(self.rect().center())
+            max_radius = min(w, h) * 0.4
+            shifts = [
+                (i - self._duplication_count // 2) * w * self._spread_factor
+                for i in range(self._duplication_count)
+            ]
+            centers = [QPointF(center_base.x() + dx, center_base.y()) for dx in shifts]
+            for c in centers:
+                for i, magnitude in enumerate(mags):
+                    for dup in range(self._duplication_count):
+                        radius = (
+                            max_radius
+                            * (i / bands)
+                            * (1 + 0.1 * dup)
+                            * magnitude
+                        )
+                        alpha = int(255 * (0.7 ** dup))
+                        painter.setBrush(QColor(255, 25, 163, alpha // 2))
+                        painter.drawEllipse(c, radius, radius)
         painter.end() 
