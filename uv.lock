@@ -409,7 +409,7 @@ requires-dist = [
     { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.24.0" },
     { name = "pyaudio", specifier = ">=0.2.11" },
     { name = "pydub", specifier = ">=0.25.1" },
-    { name = "pyinstaller", specifier = ">=6.14.2" },
+    { name = "pyinstaller", specifier = ">=6.0.0,<6.15.0" },
     { name = "pyqt6", specifier = ">=6.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pytest-qt", marker = "extra == 'dev'", specifier = ">=3.0.0" },

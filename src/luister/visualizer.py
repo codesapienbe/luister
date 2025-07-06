@@ -41,9 +41,9 @@ class VisualizerWidget(QWidget):
         self._sensitivity_exponent = 0.5
         self._duplication_count = 3  # Number of element copies
         self._spread_factor = 0.15   # Coordinate spread percentage
-        # rotation animation
-        self._rotation_angle = 0.0
-        self._rotation_speed = 1.0  # degrees per frame
+        # per-item rotation bookkeeping
+        self._frame_counter = 0
+        self._rot_speeds: dict[tuple, float] = {}
         self._rotation_timer = QTimer(self)
         self._rotation_timer.timeout.connect(self._increment_rotation)
         self._rotation_timer.start(30)  # ~33 FPS
@@ -105,12 +105,8 @@ class VisualizerWidget(QWidget):
         # non-linear curve
         mags = proc ** self._sensitivity_exponent
         bands = len(mags)
-        # apply global rotation transform for fancy effect
-        painter.translate(w / 2, h / 2)
-        painter.rotate(self._rotation_angle)
-        painter.translate(-w / 2, -h / 2)
 
-        # style-based rendering
+        # style-based rendering with per-item rotations
         if self._style_index == 0:
             # vertical bars with ghosting effect
             bar_width = w / bands if bands else w
@@ -121,28 +117,26 @@ class VisualizerWidget(QWidget):
                     alpha = int(255 * (0.6 ** dup))
                     color = self._color_cache[(i+dup) % len(self._color_cache)]
                     color.setAlpha(alpha)
+                    rect_x = int(bar_width * i + offset)
+                    rect_y = h - height
+                    rect_w = int(bar_width * 0.6)
+                    rect_h = height
+                    self._apply_item_rotation(painter, (0,i,dup), rect_x+rect_w/2, rect_y+rect_h/2)
                     painter.setBrush(color)
-                    painter.drawRect(
-                        int(bar_width * i + offset),
-                        h - height,
-                        int(bar_width * 0.6),
-                        height
-                    )
+                    painter.drawRect(rect_x, rect_y, rect_w, rect_h)
+                    painter.restore()
                     # horizontally mirrored duplicate
                     mirror_x = w - (bar_width * i + offset) - int(bar_width * 0.6)
-                    painter.drawRect(
-                        int(mirror_x),
-                        h - height,
-                        int(bar_width * 0.6),
-                        height
-                    )
+                    self._apply_item_rotation(painter, (0,i,dup,'mirror'), mirror_x+rect_w/2, rect_y+rect_h/2)
+                    painter.setBrush(color)
+                    painter.drawRect(int(mirror_x), rect_y, rect_w, rect_h)
+                    painter.restore()
                     # vertically flipped duplicate (drawn from top)
-                    painter.drawRect(
-                        int(bar_width * i + offset),
-                        0,
-                        int(bar_width * 0.6),
-                        height
-                    )
+                    top_y = 0
+                    self._apply_item_rotation(painter, (0,i,dup,'flip'), rect_x+rect_w/2, top_y+rect_h/2)
+                    painter.setBrush(color)
+                    painter.drawRect(rect_x, top_y, rect_w, rect_h)
+                    painter.restore()
         elif self._style_index == 1:
             # filled area with multiple reflection layers
             for dup in range(1, self._duplication_count + 1):
@@ -158,7 +152,10 @@ class VisualizerWidget(QWidget):
                 
                 path.lineTo(w, h)
                 col = self._random_color(50 // dup)
+                # rotate path around center
+                self._apply_item_rotation(painter, (1,dup), w/2, h/2)
                 painter.fillPath(path, col)
+                painter.restore()
                 # horizontal mirror of the filled area
                 painter.save()
                 painter.translate(w, 0)
@@ -184,9 +181,11 @@ class VisualizerWidget(QWidget):
                     line_length = magnitude * min(w, h) * 0.4
                     for angle in range(0, 360, 360 // (self._duplication_count + 2)):
                         rad = math.radians(angle + i * 5)
+                        ang_key = (2,i,angle)
+                        dynamic_angle = math.radians(self._get_angle(ang_key))
                         end_point = QPointF(
-                            c.x() + line_length * math.cos(rad),
-                            c.y() + line_length * math.sin(rad)
+                            c.x() + line_length * math.cos(rad + dynamic_angle),
+                            c.y() + line_length * math.sin(rad + dynamic_angle)
                         )
                         pen = QPen(self._random_color())
                         painter.setPen(pen)
@@ -203,18 +202,8 @@ class VisualizerWidget(QWidget):
                     path.lineTo(x, y)
                     if dup > 0:
                         path.addEllipse(x, y, 3 + dup*2, 3 + dup*2)
+                self._apply_item_rotation(painter, (3,dup), w/2, y_base)
                 painter.setPen(QPen(self._random_color()))
-                painter.drawPath(path)
-                # horizontal mirror of the spectrum path
-                painter.save()
-                painter.translate(w, 0)
-                painter.scale(-1, 1)
-                painter.drawPath(path)
-                painter.restore()
-                # vertical mirror of the spectrum path
-                painter.save()
-                painter.translate(0, h)
-                painter.scale(1, -1)
                 painter.drawPath(path)
                 painter.restore()
         elif self._style_index == 4:
@@ -237,13 +226,32 @@ class VisualizerWidget(QWidget):
                         )
                         alpha = int(255 * (0.7 ** dup))
                         col = self._random_color(alpha // 2)
+                        self._apply_item_rotation(painter, (4,i,dup), c.x(), c.y())
                         painter.setBrush(col)
                         painter.drawEllipse(c, radius, radius)
+                        painter.restore()
         painter.end()
 
     def _increment_rotation(self):
-        self._rotation_angle = (self._rotation_angle + self._rotation_speed) % 360
+        self._frame_counter += 1
         self.update()
+
+    def _get_angle(self, key: tuple) -> float:
+        """Return current rotation angle for a given visual element key."""
+        if key not in self._rot_speeds:
+            # random speed between -3 and 3 deg per frame, excluding very slow
+            speed = 0.0
+            while abs(speed) < 0.2:
+                speed = random.uniform(-3.0, 3.0)
+            self._rot_speeds[key] = speed
+        return (self._rot_speeds[key] * self._frame_counter) % 360
+
+    def _apply_item_rotation(self, painter: QPainter, key: tuple, cx: float, cy: float):
+        angle = self._get_angle(key)
+        painter.save()
+        painter.translate(cx, cy)
+        painter.rotate(angle)
+        painter.translate(-cx, -cy)
 
     def _random_color(self, alpha: int = 255) -> QColor:
         """Return a bright random color."""
