@@ -256,4 +256,14 @@ class VisualizerWidget(QWidget):
     def _random_color(self, alpha: int = 255) -> QColor:
         """Return a bright random color."""
         hue = random.randint(0, 359)
-        return QColor.fromHsv(hue, 255, 255, alpha) 
+        return QColor.fromHsv(hue, 255, 255, alpha)
+
+    def pause_animation(self):
+        """Stop internal rotation timer for idle state."""
+        if self._rotation_timer.isActive():
+            self._rotation_timer.stop()
+
+    def resume_animation(self):
+        """Restart rotation timer when playback resumes."""
+        if not self._rotation_timer.isActive():
+            self._rotation_timer.start(30) 

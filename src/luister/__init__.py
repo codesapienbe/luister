@@ -382,7 +382,7 @@ QSlider::handle:horizontal {{
         self._tray_rotation_angle = 0
         self._tray_timer = QTimer(self)
         self._tray_timer.timeout.connect(self._rotate_tray_icon)
-        self._tray_timer.start(100)  # 10 FPS
+        # timer will start when playback begins
 
     def set_Enabled_button(self):
         if not self.playlist_urls:
@@ -509,8 +509,24 @@ QSlider::handle:horizontal {{
         self.setWindowTitle(f"Luister {vol_icon}")
 
     def audiostate_changed(self, state):
-        if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            pass
+        playing = state == QMediaPlayer.PlaybackState.PlayingState
+
+        # Control tray icon rotation
+        if playing:
+            if not self._tray_timer.isActive():
+                self._tray_timer.start(100)  # 10 FPS
+        else:
+            if self._tray_timer.isActive():
+                self._tray_timer.stop()
+                # restore static icon
+                self.tray_icon.setIcon(self._tray_base_icon)  # type: ignore[arg-type]
+
+        # Control visualizer animation if it exists
+        if self.visualizer is not None:
+            if playing:
+                self.visualizer.resume_animation()
+            else:
+                self.visualizer.pause_animation()
 
     #update slider position
     def position_changed(self, position):
@@ -590,6 +606,13 @@ QSlider::handle:horizontal {{
         self.ui.list_songs.clear()
         for i, url in enumerate(self.playlist_urls, 1):
             self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
+
+        # highlight currently playing song
+        if 0 <= self.current_index < len(self.playlist_urls):
+            current_item = self.ui.list_songs.item(self.current_index)
+            if current_item is not None:
+                self.ui.list_songs.setCurrentItem(current_item)
+                self.ui.list_songs.scrollToItem(current_item)
 
     @log_call()
     def toggle_playlist(self):
