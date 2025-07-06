@@ -61,3 +61,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 qt_api = "pyqt5"
+
+[tool.setuptools.package-data]
+"luister" = ["*.ui", "img/*.png"]

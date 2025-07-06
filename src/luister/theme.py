@@ -14,29 +14,29 @@ class Theme:
     @staticmethod
     def light() -> QPalette:
         pal = QPalette()
-        pal.setColor(QPalette.ColorRole.Window, QColor("#ffffff"))
-        pal.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.black)
-        pal.setColor(QPalette.ColorRole.Base, QColor("#f0f0f0"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#e0e0e0"))
-        pal.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.black)
-        pal.setColor(QPalette.ColorRole.Button, QColor("#e0e0e0"))
-        pal.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.black)
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#2196f3"))
-        pal.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.white)
+        pal.setColor(QPalette.ColorRole.Window, QColor("#FCFCF9"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#13343B"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFD"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#F2F2F0"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#13343B"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#EFEDE7"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#13343B"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#21808D"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FCFCF9"))
         return pal
 
     @staticmethod
     def dark() -> QPalette:
         pal = QPalette()
-        pal.setColor(QPalette.ColorRole.Window, QColor("#121212"))
-        pal.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
-        pal.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#2a2a2a"))
-        pal.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
-        pal.setColor(QPalette.ColorRole.Button, QColor("#2a2a2a"))
-        pal.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#64b5f6"))
-        pal.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+        pal.setColor(QPalette.ColorRole.Window, QColor("#1F2121"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#F5F5F5"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#262828"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#303131"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#F5F5F5"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#2A2C2C"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#F5F5F5"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#32B8C6"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#13343B"))
         return pal
 
     @staticmethod
