@@ -351,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize typewriter effect
     const typewriterElement = document.getElementById('typewriter');
     if (typewriterElement) {
-        const typewriter = new TypeWriter(typewriterElement, 'uv run luister', 150);
+        const typewriter = new TypeWriter(typewriterElement, 'uvx run --from https://github.com/codesapienbe/luister/releases/download/v2025.07.06.1321/luister-0.1.0-py3-none-any.whl', 150);
         setTimeout(() => {
             typewriter.start();
         }, 1000);
@@ -361,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyBtn = document.getElementById('copyBtn');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
-            copyToClipboard('uv run luister');
+            copyToClipboard('uvx run --from https://github.com/codesapienbe/luister/releases/download/v2025.07.06.1321/luister-0.1.0-py3-none-any.whl');
         });
     }
     
