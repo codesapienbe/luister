@@ -21,6 +21,7 @@ class LyricsWidget(QWidget):
     """Widget to transcribe and display timed lyrics using Whisper offline model."""
 
     segments_ready = pyqtSignal(object)
+    closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -165,3 +166,7 @@ class LyricsWidget(QWidget):
     def hide_progress(self):
         """Hide the progress bar after transcription completes."""
         self.progress_bar.hide()
+
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event)

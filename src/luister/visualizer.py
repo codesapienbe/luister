@@ -18,11 +18,12 @@ except ImportError:
 
 import math
 import random
-from PyQt6.QtCore import QRect, Qt, QPointF, QTimer
+from PyQt6.QtCore import QRect, Qt, QPointF, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
 class VisualizerWidget(QWidget):
+    closed = pyqtSignal()
     """Simple bar visualizer driven by the current audio playback."""
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -267,3 +268,7 @@ class VisualizerWidget(QWidget):
         """Restart rotation timer when playback resumes."""
         if not self._rotation_timer.isActive():
             self._rotation_timer.start(30) 
+
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event) 

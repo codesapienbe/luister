@@ -12,8 +12,10 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon,
     QInputDialog,
     QProgressBar,
+    QDockWidget,
+    QGraphicsOpacityEffect,
 )
-from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer, QThread, pyqtSignal, QPropertyAnimation
 from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QTransform, QPixmap
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 import sys
@@ -166,29 +168,39 @@ class UI(QMainWindow):
         view_menu = menubar.addMenu("&View")  # type: ignore
         self.visualizer_action = view_menu.addAction("Visualizer")  # type: ignore
         self.visualizer_action.setCheckable(True)  # type: ignore[attr-defined]
-        self.visualizer_action.toggled.connect(lambda checked: self.toggle_visualizer() if checked else self.toggle_visualizer())  # type: ignore
         self.lyrics_action = view_menu.addAction("Lyrics")  # type: ignore
         self.lyrics_action.setCheckable(True)  # type: ignore
-        self.lyrics_action.toggled.connect(self.toggle_lyrics)  # type: ignore
+        # Connect signals after actions are created
+        if self.visualizer_action is not None:
+            self.visualizer_action.toggled.connect(self._menu_toggle_visualizer)
+        if self.lyrics_action is not None:
+            self.lyrics_action.toggled.connect(self._menu_toggle_lyrics)
 
         theme_menu = menubar.addMenu("&Theme")  # type: ignore
         quit_action = menubar.addAction("Quit")  # type: ignore
-        quit_action.triggered.connect(self.quit_app)  # type: ignore
+        quit_action.triggered.connect(self.graceful_shutdown)  # type: ignore
+        force_quit_action = menubar.addAction("Force Quit")  # type: ignore
+        force_quit_action.triggered.connect(self.force_shutdown)  # type: ignore
 
         self.action_group = QActionGroup(self)
         self.action_group.setExclusive(True)
 
+        self.system_action = QAction("System Default", self)
+        self.system_action.setCheckable(True)
         self.light_action = QAction("Light", self)
         self.light_action.setCheckable(True)
         self.dark_action = QAction("Dark", self)
         self.dark_action.setCheckable(True)
 
+        self.action_group.addAction(self.system_action)
         self.action_group.addAction(self.light_action)
         self.action_group.addAction(self.dark_action)
 
+        theme_menu.addAction(self.system_action)  # type: ignore
         theme_menu.addAction(self.light_action)  # type: ignore
         theme_menu.addAction(self.dark_action)  # type: ignore
 
+        self.system_action.triggered.connect(lambda: self.set_theme("system"))
         self.light_action.triggered.connect(lambda: self.set_theme("light"))
         self.dark_action.triggered.connect(lambda: self.set_theme("dark"))
         #set icons
@@ -350,37 +362,67 @@ QSlider::handle:horizontal {{
         else:
             self._ensure_playlist()
 
+        # Visualizer dock
+        try:
+            self.visualizer_widget = VisualizerWidget()
+            self.visualizer_widget.setWindowTitle("Visualizer")
+            self.visualizer_widget.resize(150, 400)
+            self.Player.positionChanged.connect(self.visualizer_widget.update_position)
+            get_manager().register(self.visualizer_widget)
+            self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
+        except Exception as e:
+            from PyQt6.QtWidgets import QLabel
+            self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
+        self.visualizer_dock = QDockWidget("Visualizer", self)
+        self.visualizer_dock.setWidget(self.visualizer_widget)
+        self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
+        # Lyrics dock
+        try:
+            self.lyrics_widget = LyricsWidget()  # type: ignore
+            self.lyrics_widget.setWindowTitle("Lyrics")
+            self.lyrics_widget.resize(300, 400)
+            self.Player.positionChanged.connect(self.lyrics_widget.update_position)
+            get_manager().register(self.lyrics_widget)
+            self.lyrics_widget.closed.connect(lambda: self.set_lyrics_visible(False))
+        except Exception as e:
+            from PyQt6.QtWidgets import QLabel
+            self.lyrics_widget = QLabel(f"Lyrics failed to initialize: {e}")
+        self.lyrics_dock = QDockWidget("Lyrics", self)
+        self.lyrics_dock.setWidget(self.lyrics_widget)
+        self.lyrics_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.lyrics_dock.visibilityChanged.connect(lambda visible: self.set_lyrics_visible(visible))
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.lyrics_dock)
+        self._apply_dock_styles()
         # --- restore GUI state (visualizer/lyrics) ---
         gui_state = self._load_gui_state()
-        if gui_state.get("visualizer") == "1":
-            self._ensure_visualizer()
-            if self.visualizer:
-                self.visualizer.show()
-        if gui_state.get("lyrics") == "1":
-            self._ensure_lyrics()
-            if self.lyrics:
-                self.lyrics.show()
+        self.visualizer_dock.setVisible(gui_state.get("visualizer") == "1")
+        self.lyrics_dock.setVisible(gui_state.get("lyrics") == "1")
 
         # restore last playlist from config (legacy)
         last_paths = self._config.get("last_playlist", [])
         if last_paths and not self.playlist_urls:
             self.playlist_urls.clear()
-            self.ui.list_songs.clear()
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.list_songs.clear()
             for p in last_paths:
                 url = QUrl.fromLocalFile(p)
                 self.playlist_urls.append(url)
-            for i, url in enumerate(self.playlist_urls, 1):
-                self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
+            if isinstance(self.ui, PlaylistUI):
+                for i, url in enumerate(self.playlist_urls, 1):
+                    self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
             self.set_Enabled_button()
             last_idx = self._config.get("last_index", 0)
             if 0 <= last_idx < len(self.playlist_urls):
                 self.current_index = last_idx
-                item = self.ui.list_songs.item(self.current_index)
-                if item:
-                    self.ui.list_songs.setCurrentItem(item)
-                    self.ui.list_songs.scrollToItem(item)
+                if isinstance(self.ui, PlaylistUI):
+                    item = self.ui.list_songs.item(self.current_index)
+                    if item:
+                        self.ui.list_songs.setCurrentItem(item)
+                        self.ui.list_songs.scrollToItem(item)
 
-        if hasattr(self, "ui"):
+        if isinstance(self.ui, PlaylistUI):
             self.ui.show()
             self._stack_playlist_below()
 
@@ -403,9 +445,11 @@ QSlider::handle:horizontal {{
         orig_ensure_lyrics = self._ensure_lyrics
         def patched_ensure_lyrics():
             orig_ensure_lyrics()
-            if self.lyrics is not None:
+            if self.lyrics_dock is not None:
                 try:
-                    self.lyrics.segments_ready.connect(self._on_lyrics_ready)  # type: ignore
+                    widget = self.lyrics_dock.widget()
+                    if isinstance(widget, LyricsWidget):
+                        widget.segments_ready.connect(self._on_lyrics_ready)  # type: ignore
                 except Exception:
                     pass
         self._ensure_lyrics = patched_ensure_lyrics
@@ -593,11 +637,13 @@ QSlider::handle:horizontal {{
                 self.tray_icon.setIcon(self._tray_base_icon)  # type: ignore[arg-type]
 
         # Control visualizer animation if it exists
-        if self.visualizer is not None:
-            if playing:
-                self.visualizer.resume_animation()
-            else:
-                self.visualizer.pause_animation()
+        if self.visualizer_dock is not None:
+            widget = self.visualizer_dock.widget()
+            if isinstance(widget, VisualizerWidget):
+                if playing:
+                    widget.resume_animation()
+                else:
+                    widget.pause_animation()
 
     #update slider position
     def position_changed(self, position):
@@ -606,7 +652,8 @@ QSlider::handle:horizontal {{
         time = duration_list[0] + ':' + duration_list[1]
         self.time_lcd.setHtml(get_html(time))
         try:
-            self.ui.time_song_text.setPlainText('0' + time)
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.time_song_text.setPlainText('0' + time)
         except:
             print('Error Playlist')
 
@@ -632,8 +679,7 @@ QSlider::handle:horizontal {{
         if not self.playlist_urls:
             return
         random.shuffle(self.playlist_urls)
-        # rebuild list view if open
-        if hasattr(self, 'ui'):
+        if isinstance(self.ui, PlaylistUI):
             self.ui.list_songs.clear()
             for i, url in enumerate(self.playlist_urls, 1):
                 self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
@@ -664,17 +710,23 @@ QSlider::handle:horizontal {{
     #show error in TextInput
     def handle_errors(self):
         self.play_btn.setEnabled(False)
-        self.title_lcd.setPlainText('Error' + str(self.Player.errorString()))
+        if isinstance(self.ui, PlaylistUI):
+            self.title_lcd.setPlainText('Error' + str(self.Player.errorString()))
 
     # ------- Playlist docking/toggle ---------
 
     def _ensure_playlist(self):
-        if not hasattr(self, "ui"):
-            self.ui = PlaylistUI(self)
+        # Main playlist UI
+        try:
+            self.ui = PlaylistUI(main_window=self)
             self.ui.filesDropped.connect(self._add_files)
             self.ui.list_songs.itemDoubleClicked.connect(self.clicked_song)  # type: ignore[arg-type]
+        except Exception as e:
+            from PyQt6.QtWidgets import QLabel
+            self.ui = QLabel(f"Playlist failed to initialize: {e}")
         # populate once
-        self.ui.list_songs.clear()
+        if isinstance(self.ui, PlaylistUI):
+            self.ui.list_songs.clear()
         for i, url in enumerate(self.playlist_urls, 1):
             self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
 
@@ -683,11 +735,12 @@ QSlider::handle:horizontal {{
 
     def _update_playlist_selection(self):
         """Ensure the playlist list widget selects & centres current_index."""
-        if not hasattr(self, "ui"):
+        if not hasattr(self, "ui") or self.ui is None:
             return
-        if 0 <= self.current_index < self.ui.list_songs.count():
-            self.ui.list_songs.setCurrentRow(self.current_index)
-            self.ui.list_songs.scrollToItem(self.ui.list_songs.currentItem())
+        if isinstance(self.ui, PlaylistUI):
+            if 0 <= self.current_index < self.ui.list_songs.count():
+                self.ui.list_songs.setCurrentRow(self.current_index)
+                self.ui.list_songs.scrollToItem(self.ui.list_songs.currentItem())
 
     @log_call()
     def toggle_playlist(self):
@@ -722,21 +775,26 @@ QSlider::handle:horizontal {{
 
             self.Player.setSource(current_url)
             # if lyrics view is visible and no cached segments yet, wait
-            if self.lyrics and self.lyrics.isVisible():
-                # show progress
-                self.lyrics.show_progress()  # type: ignore
-                # set pending playback and start loading lyrics
-                self._pending_play_when_lyrics_loaded = True
-                self.lyrics.load_lyrics(current_url.toLocalFile())  # type: ignore
-                return
+            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
+                widget = self.lyrics_dock.widget()
+                if isinstance(widget, LyricsWidget):
+                    widget.show_progress()  # type: ignore
+                    # set pending playback and start loading lyrics
+                    self._pending_play_when_lyrics_loaded = True
+                    widget.load_lyrics(current_url.toLocalFile())  # type: ignore
+                    return
             else:
                 self.Player.play()
                 self.update_play_stop_icon()
             # feed audio to visualizer
-            if self.visualizer and self.visualizer.isVisible():
-                self.visualizer.set_audio(current_url.toLocalFile())
-            if self.lyrics and self.lyrics.isVisible():
-                self.lyrics.load_lyrics(current_url.toLocalFile())
+            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
+                widget = self.visualizer_dock.widget()
+                if isinstance(widget, VisualizerWidget):
+                    widget.set_audio(current_url.toLocalFile())
+            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
+                widget = self.lyrics_dock.widget()
+                if isinstance(widget, LyricsWidget):
+                    widget.load_lyrics(current_url.toLocalFile())
             # metadata extraction
             if TinyTag is not None:
                 try:
@@ -750,7 +808,7 @@ QSlider::handle:horizontal {{
             # update title display
             text = f"{self.current_index + 1}. {current_url.fileName()}"
             self.title_lcd.setPlainText(text)
-            if hasattr(self, 'ui'):
+            if isinstance(self.ui, PlaylistUI):
                 self.ui.time_song_text.setPlainText('00:00')
                 self._update_playlist_selection()
 
@@ -790,11 +848,19 @@ QSlider::handle:horizontal {{
     def set_theme(self, name: str):
         if getattr(self, "_current_theme", None) == name:
             return
-        Theme.apply(QApplication.instance(), name)
-        # update check state
+        if name == "system":
+            self._track_system_theme = True
+            self._apply_system_theme()
+        else:
+            self._track_system_theme = False
+            Theme.apply(QApplication.instance(), name)
+            self._update_theme_menu(name)
+            self._current_theme = name
+
+    def _update_theme_menu(self, name: str):
+        self.system_action.setChecked(name == "system")
         self.light_action.setChecked(name == "light")
         self.dark_action.setChecked(name == "dark")
-        self._current_theme = name
 
     # ---- system theme helpers ----
 
@@ -814,57 +880,9 @@ QSlider::handle:horizontal {{
         except Exception:
             pal = QApplication.palette()
             name = "dark" if self._is_dark_palette(pal) else "light"
-        self.set_theme(name)
-
-    def eventFilter(self, obj, event):  # noqa: D401
-        from PyQt6.QtCore import QEvent
-        if event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
-            if hasattr(self, 'ui') and self.ui.isVisible():
-                self._stack_playlist_below()
-            if self.visualizer and self.visualizer.isVisible():
-                self._stack_visualizer()
-            if self.lyrics and self.lyrics.isVisible():
-                self._stack_lyrics()
-            # hide dependent windows when main window is minimized
-            if event.type() == QEvent.Type.WindowStateChange and obj is self:
-                if self.isMinimized():
-                    if hasattr(self, 'ui'):
-                        self.ui.hide()
-                    if self.visualizer:
-                        self.visualizer.hide()
-                    if self.lyrics:
-                        self.lyrics.hide()
-        if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.time_lcd:
-            self.toggle_visualizer()
-            return True
-        if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.title_lcd:
-            self.toggle_lyrics()
-            return True
-        if event.type() == QEvent.Type.ApplicationPaletteChange:
-            self._apply_system_theme()
-        return super().eventFilter(obj, event)
-
-    # icon update helper
-    def update_play_stop_icon(self):
-        sp = QStyle.StandardPixmap  # type: ignore[attr-defined]
-        if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            icon = self.style().standardIcon(sp.SP_MediaStop)  # type: ignore
-        else:
-            icon = self.style().standardIcon(sp.SP_MediaPlay)  # type: ignore
-        self.play_btn.setIcon(icon)
-
-    # ---- style cleanup ----
-
-    def _clear_inline_styles(self):
-        from PyQt6.QtWidgets import QWidget
-        stack = [self]
-        while stack:
-            w = stack.pop()
-            if isinstance(w, QWidget) and w.styleSheet():  # type: ignore[arg-type]
-                w.setStyleSheet("")
-            stack.extend(list(w.findChildren(QWidget)))  # type: ignore[arg-type]
-
-    # ---- audio device handling ----
+        Theme.apply(QApplication.instance(), name)
+        self._update_theme_menu("system")
+        self._current_theme = "system"
 
     def _audio_device_changed(self, device):  # noqa: D401
         """Qt signal slot for system default-audio-output changes."""
@@ -878,100 +896,222 @@ QSlider::handle:horizontal {{
             self.audio_output.setVolume(vol)
             self.Player.setAudioOutput(self.audio_output)
 
-    # ------- Visualizer -------
+    def eventFilter(self, obj, event):  # noqa: D401
+        from PyQt6.QtCore import QEvent
+        if event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
+            if hasattr(self, 'ui') and self.ui.isVisible():
+                self._stack_playlist_below()
+            visualizer_dock = getattr(self, 'visualizer_dock', None)
+            if visualizer_dock is not None and visualizer_dock.isVisible():
+                self._stack_visualizer()
+            lyrics_dock = getattr(self, 'lyrics_dock', None)
+            if lyrics_dock is not None and lyrics_dock.isVisible():
+                self._stack_lyrics()
+            # hide dependent windows when main window is minimized
+            if event.type() == QEvent.Type.WindowStateChange and obj is self:
+                if self.isMinimized():
+                    if hasattr(self, 'ui'):
+                        self.ui.hide()
+                    if visualizer_dock is not None:
+                        visualizer_dock.hide()
+                    if lyrics_dock is not None:
+                        lyrics_dock.hide()
+        if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.time_lcd:
+            self.toggle_visualizer()
+            return True
+        if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.title_lcd:
+            self.toggle_lyrics()
+            return True
+        if event.type() == QEvent.Type.ApplicationPaletteChange:
+            if getattr(self, '_track_system_theme', False):
+                self._apply_system_theme()
+        return super().eventFilter(obj, event)
+
+    # --- Unified component visibility toggling and menu sync ---
+    def _menu_toggle_visualizer(self, checked):
+        self.set_visualizer_visible(checked)
+    def _menu_toggle_lyrics(self, checked):
+        self.set_lyrics_visible(checked)
+
+    def update_play_stop_icon(self):
+        sp = QStyle.StandardPixmap  # type: ignore[attr-defined]
+        if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            icon = self.style().standardIcon(sp.SP_MediaStop)  # type: ignore
+        else:
+            icon = self.style().standardIcon(sp.SP_MediaPlay)  # type: ignore
+        self.play_btn.setIcon(icon)
+
+    def _clear_inline_styles(self):
+        from PyQt6.QtWidgets import QWidget
+        stack = [self]
+        while stack:
+            w = stack.pop()
+            if isinstance(w, QWidget) and w.styleSheet():  # type: ignore[arg-type]
+                w.setStyleSheet("")
+            stack.extend(list(w.findChildren(QWidget)))  # type: ignore[arg-type]
 
     def _ensure_visualizer(self):
-        if self.visualizer is None:
-            self.visualizer = VisualizerWidget()
-            self.visualizer.setWindowTitle("Visualizer")
-            self.visualizer.resize(150, 400)
-            # wire player position
-            self.Player.positionChanged.connect(self.visualizer.update_position)
-
-            get_manager().register(self.visualizer)
+        pass
     def _ensure_lyrics(self):
-        if self.lyrics is None:
-            self.lyrics = LyricsWidget()  # type: ignore
-            self.lyrics.setWindowTitle("Lyrics")  # type: ignore
-            self.lyrics.resize(300, 400)  # type: ignore
-            # wire player position updates for lyrics sync
-            self.Player.positionChanged.connect(self.lyrics.update_position)  # type: ignore
-            get_manager().register(self.lyrics)
+        pass
+    def _ensure_playlist(self):
+        pass
+
+    def set_visualizer_visible(self, visible: bool):
+        self.visualizer_dock.setVisible(visible)
+        if hasattr(self, 'visualizer_action') and self.visualizer_action is not None:
+            self.visualizer_action.setChecked(self.visualizer_dock.isVisible())
+
+    def set_lyrics_visible(self, visible: bool):
+        if visible:
+            widget = self.lyrics_dock.widget()
+            from luister.lyrics import LyricsWidget
+            if isinstance(widget, LyricsWidget):
+                if self.current_index >= 0 and self.current_index < len(self.playlist_urls):
+                    widget.load_lyrics(self.playlist_urls[self.current_index].toLocalFile())
+            self._fade_dock(self.lyrics_dock, fade_in=True)
+        else:
+            self._fade_dock(self.lyrics_dock, fade_in=False)
+        if hasattr(self, 'lyrics_action') and self.lyrics_action is not None:
+            self.lyrics_action.setChecked(self.lyrics_dock.isVisible())
+
+    def _apply_dock_styles(self):
+        dock_style = '''
+        QDockWidget {
+            background: rgba(255,255,255,0.15);
+            border-radius: 16px;
+            border: 1.5px solid rgba(0,0,0,0.08);
+            box-shadow: 0 8px 32px 0 rgba(31,38,135,0.37);
+        }
+        QDockWidget::title {
+            background: rgba(255,255,255,0.25);
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            padding: 6px 12px;
+            color: palette(window-text);
+            transition: background 0.2s;
+        }
+        QDockWidget::title:hover {
+            background: rgba(255,255,255,0.40);
+            color: #21808D;
+        }
+        QDockWidget::title:active {
+            background: rgba(33,128,141,0.25);
+            color: #FCFCF9;
+        }
+        '''
+        if self.visualizer_dock is not None:
+            self.visualizer_dock.setStyleSheet(dock_style)
+        if self.lyrics_dock is not None:
+            self.lyrics_dock.setStyleSheet(dock_style)
+
+    def _highlight_main_window(self):
+        # Animate the main window background color to a highlight and back
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtCore import QPropertyAnimation
+        start_color = self.palette().color(self.backgroundRole())
+        highlight_color = QColor(33, 128, 141, 40)  # Subtle teal highlight
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(self.backgroundRole(), highlight_color)
+        self.setPalette(pal)
+        anim = QPropertyAnimation(self, b"windowOpacity")
+        anim.setDuration(350)
+        anim.setStartValue(1.0)
+        anim.setEndValue(1.0)
+        def restore_bg():
+            pal = self.palette()
+            pal.setColor(self.backgroundRole(), start_color)
+            self.setPalette(pal)
+        anim.finished.connect(restore_bg)
+        anim.start()
+        self._mainwin_anim = anim
+
+    def _fade_dock(self, dock, fade_in=True):
+        if dock is None:
+            return
+        effect = QGraphicsOpacityEffect(dock)
+        dock.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", dock)
+        anim.setDuration(250)
+        if fade_in:
+            anim.setStartValue(0)
+            anim.setEndValue(1)
+            dock.show()
+            self._highlight_main_window()
+        else:
+            anim.setStartValue(1)
+            anim.setEndValue(0)
+            def hide_dock():
+                dock.hide()
+                dock.setGraphicsEffect(None)
+            anim.finished.connect(hide_dock)
+            self._highlight_main_window()
+        anim.start()
+        # Keep a reference to prevent garbage collection
+        dock._fade_anim = anim
+
+    # Call this after docks are created
+    def _ensure_dock_styles(self):
+        self._apply_dock_styles()
 
     def toggle_visualizer(self):
-        self._ensure_visualizer()
-        if self.visualizer is None:
-            return
-        if self.visualizer.isVisible():
-            self.visualizer.hide()
-        else:
-            self.visualizer.show()
-            # if no magnitude data yet and a track is loaded, feed it
-            if self.current_index >= 0 and self.current_index < len(self.playlist_urls):
-                self.visualizer.set_audio(self.playlist_urls[self.current_index].toLocalFile())
-            self._stack_visualizer()
+        self.set_visualizer_visible(not (self.visualizer_dock is not None and self.visualizer_dock.isVisible()))
     def toggle_lyrics(self):
-        self._ensure_lyrics()
-        if self.lyrics is None:
-            return
-        if self.lyrics.isVisible():
-            self.lyrics.hide()
-        else:
-            # load lyrics for current track
-            if self.current_index >= 0 and self.current_index < len(self.playlist_urls):
-                self.lyrics.load_lyrics(self.playlist_urls[self.current_index].toLocalFile())
-            self.lyrics.show()
-            self._stack_lyrics()
+        self.set_lyrics_visible(not (self.lyrics_dock is not None and self.lyrics_dock.isVisible()))
 
-    # ---- positioning helper ----
+    # --- Ensure menu state is updated if user closes component window directly ---
+    # (Assumes VisualizerWidget and LyricsWidget can emit a signal or call back on close)
+    # If not, we can subclass and override closeEvent to call back here.
 
+    # --- Improved stacking for UX ---
     def _stack_playlist_below(self):
-        if not hasattr(self, 'ui'):
-            return
-        geo = self.geometry()
-        self.ui.setGeometry(geo.left(), geo.bottom() + 5, geo.width(), 400)
-
+        pass
     def _stack_visualizer(self):
-        if self.visualizer is None:
-            return
-        main_geo = self.geometry()
-        playlist_height = self.ui.height() if hasattr(self, 'ui') and self.ui.isVisible() else 0
-        total_height = main_geo.height() + playlist_height + 5
-        vis_width = main_geo.width()
-        left_x = main_geo.left() - vis_width - 5
-        self.visualizer.setGeometry(left_x, main_geo.top(), vis_width, total_height)
+        pass
     def _stack_lyrics(self):
-        if self.lyrics is None:
-            return
-        main_geo = self.geometry()
-        playlist_height = self.ui.height() if hasattr(self, 'ui') and self.ui.isVisible() else 0
-        total_height = main_geo.height() + playlist_height + 5
-        right_x = main_geo.right() + 5
-        self.lyrics.setGeometry(right_x, main_geo.top(), main_geo.width(), total_height)
+        pass
 
     @log_call()
-    def quit_app(self):
-        # save playlist state to config
+    def graceful_shutdown(self):
+        """Graceful shutdown: save state, close widgets, stop threads, quit app."""
         try:
-            self._config["last_playlist"] = [url.toLocalFile() for url in self.playlist_urls]
-            self._config["last_index"] = self.current_index
-            with open(self._config_path, "w", encoding="utf-8") as f:
-                json.dump(self._config, f)
-        except Exception:
-            pass
-        mgr = get_manager()
-        mgr.shutdown()
+            self._persist_gui_state()
+            self._persist_playing_state(self.playlist_urls[self.current_index].toLocalFile() if self.playlist_urls and self.current_index >= 0 else "")
+            self._persist_playlist_dir(str(Path.home() / ".luister" / "states"))
+        except Exception as e:
+            logging.error(f"Error saving state during shutdown: {e}")
+        try:
+            mgr = get_manager()
+            mgr.shutdown()
+        except Exception as e:
+            logging.error(f"Error during manager shutdown: {e}")
         app = QApplication.instance()
         if app is not None:
             app.quit()  # type: ignore[attr-defined]
+
+    @log_call()
+    def force_shutdown(self):
+        """Immediate shutdown: skip state save, force close all widgets and exit."""
+        try:
+            mgr = get_manager()
+            mgr.shutdown()
+        except Exception as e:
+            logging.error(f"Error during forced manager shutdown: {e}")
+        app = QApplication.instance()
+        if app is not None:
+            app.exit(1)  # type: ignore[attr-defined]
 
     def _on_lyrics_ready(self, segments):
         """Slot called when lyrics segments are loaded; resume playback if pending."""
         if getattr(self, '_pending_play_when_lyrics_loaded', False):
             self._pending_play_when_lyrics_loaded = False
             # hide progress bar
-            if self.lyrics:
-                self.lyrics.hide_progress()  # type: ignore
+            if self.lyrics_dock is not None:
+                widget = self.lyrics_dock.widget()
+                from luister.lyrics import LyricsWidget
+                if isinstance(widget, LyricsWidget):
+                    widget.hide_progress()  # type: ignore
             self.Player.play()
             self.update_play_stop_icon()
 
@@ -983,10 +1123,10 @@ QSlider::handle:horizontal {{
         self.hide()
         if hasattr(self, 'ui'):
             self.ui.hide()
-        if self.visualizer and self.visualizer.isVisible():
-            self.visualizer.hide()
-        if self.lyrics and self.lyrics.isVisible():
-            self.lyrics.hide()
+        if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
+            self.visualizer_dock.hide()
+        if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
+            self.lyrics_dock.hide()
         # keep tray icon active
 
     def _persist_gui_state(self):
@@ -994,8 +1134,8 @@ QSlider::handle:horizontal {{
             state_dir = Path.home() / ".luister" / "states"
             state_dir.mkdir(parents=True, exist_ok=True)
             gui_file = state_dir / "gui.txt"
-            visualizer = "1" if self.visualizer and self.visualizer.isVisible() else "0"
-            lyrics = "1" if self.lyrics and self.lyrics.isVisible() else "0"
+            visualizer = "1" if self.visualizer_dock is not None and self.visualizer_dock.isVisible() else "0"
+            lyrics = "1" if self.lyrics_dock is not None and self.lyrics_dock.isVisible() else "0"
             with open(gui_file, "w", encoding="utf-8") as f:
                 f.write(f"visualizer={visualizer}\nlyrics={lyrics}\n")
         except Exception:
@@ -1024,18 +1164,18 @@ QSlider::handle:horizontal {{
                     self.hide()
                     if hasattr(self, 'ui'):
                         self.ui.hide()
-                    if self.visualizer:
-                        self.visualizer.hide()
-                    if self.lyrics:
-                        self.lyrics.hide()
+                    if self.visualizer_dock is not None:
+                        self.visualizer_dock.hide()
+                    if self.lyrics_dock is not None:
+                        self.lyrics_dock.hide()
                 else:
                     self.show()
                     if hasattr(self, 'ui'):
                         self.ui.show()
-                    if self.visualizer:
-                        self.visualizer.show()
-                    if self.lyrics:
-                        self.lyrics.show()
+                    if self.visualizer_dock is not None:
+                        self.visualizer_dock.show()
+                    if self.lyrics_dock is not None:
+                        self.lyrics_dock.show()
         except Exception:
             pass
 
