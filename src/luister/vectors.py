@@ -227,4 +227,32 @@ def tray_icon(color: QColor | None = None) -> QIcon:
     path.lineTo(w * 0.35, h * 0.2)
     path.lineTo(w * 0.35, h * 0.58)
     path.closeSubpath()
-    return _make_icon(path, color) 
+    return _make_icon(path, color)
+
+# YouTube-style play icon: rounded rectangle with white triangle
+def youtube_icon(color: QColor | None = None) -> QIcon:
+    path_bg = QPainterPath()
+    w, h = _ICON_SIZE.width(), _ICON_SIZE.height()
+    rect_w = w * 0.92
+    rect_h = h * 0.64
+    rect_x = (w - rect_w) / 2
+    rect_y = (h - rect_h) / 2
+    radius = min(w, h) * 0.12
+    path_bg.addRoundedRect(rect_x, rect_y, rect_w, rect_h, radius, radius)
+
+    tri = QPainterPath()
+    tri.moveTo(rect_x + rect_w * 0.36, rect_y + rect_h * 0.25)
+    tri.lineTo(rect_x + rect_w * 0.75, rect_y + rect_h * 0.5)
+    tri.lineTo(rect_x + rect_w * 0.36, rect_y + rect_h * 0.75)
+    tri.closeSubpath()
+
+    pix = QPixmap(_ICON_SIZE)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    bg_color = color or QColor(220, 45, 45, _ALPHA)
+    fg_color = QColor(255, 255, 255, _ALPHA)
+    painter.fillPath(path_bg, bg_color)
+    painter.fillPath(tri, fg_color)
+    painter.end()
+    return QIcon(pix) 

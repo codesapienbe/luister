@@ -36,6 +36,9 @@ class LyricsWidget(QWidget):
         layout.addWidget(self.list_widget)
         self._model = None
         self.segments: list[tuple[float, float, str]] = []
+        # Transcription state
+        self._transcribing = False
+        self._current_audio_file: str | None = None
         # Connect signal to populate segments when ready
         self.segments_ready.connect(self._on_segments_ready)
 
@@ -44,6 +47,7 @@ class LyricsWidget(QWidget):
         # check for cached transcription file
         audio_path = Path(file_path)
         cache_path = audio_path.with_suffix(audio_path.suffix + ".json")
+        # Return cached segments early
         if cache_path.exists():
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -51,6 +55,10 @@ class LyricsWidget(QWidget):
             except Exception:
                 segments = []
             self.segments_ready.emit(segments)
+            return
+
+        # Avoid double transcription: if currently transcribing same file, return
+        if self._transcribing and self._current_audio_file == str(audio_path):
             return
 
         if whisper is None:
@@ -109,6 +117,8 @@ class LyricsWidget(QWidget):
         # transcription in background using selected language
         def run_transcribe():
             try:
+                self._transcribing = True
+                self._current_audio_file = str(audio_path)
                 model = self._model
                 # load user-selected model size for transcription
                 if model_size != "tiny":
@@ -134,6 +144,9 @@ class LyricsWidget(QWidget):
                     pass
             except Exception:
                 segments = []
+            finally:
+                self._transcribing = False
+                self._current_audio_file = None
             self.segments_ready.emit(segments)
 
         threading.Thread(target=run_transcribe, daemon=True).start()

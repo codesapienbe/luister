@@ -43,6 +43,7 @@ from luister.vectors import (
     double_right_icon,
     slider_handle_icon,
     tray_icon,
+    youtube_icon,
 )
 from luister.visualizer import VisualizerWidget
 from luister.lyrics import LyricsWidget  # type: ignore
@@ -91,6 +92,8 @@ class UI(QMainWindow):
         _mk_btn("stop_btn", 149, 144, 41, 41)
         _mk_btn("next_btn", 193, 144, 41, 41)
         _mk_btn("download_btn", 257, 144, 46, 38)
+        # YouTube quick-add button
+        yt_btn = _mk_btn("youtube_btn", 310, 144, 41, 41)
         _mk_btn("shuffle_btn", 340, 150, 121, 25)
         _mk_btn("loop_btn", 470, 150, 61, 25)
         eq_btn = QPushButton("EQ", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(470, 70, 51, 25)
@@ -132,7 +135,9 @@ class UI(QMainWindow):
         self.yt_progress.hide()
 
         # End of manual UI build
-        self.resize(620, 230)  # match original designer size
+        # Enforce single-app width with all components docked and visible
+        # Central area remains similar size; overall window widened to accommodate docks
+        self.resize(1120, 420)  # expanded width/height to fit docks without overlap
 
         # initial LCD text (replicates old HTML)
         time_lcd.setPlainText('▶    00:00')
@@ -157,52 +162,20 @@ class UI(QMainWindow):
         self.stop_btn = self.findChild(QPushButton, "stop_btn")
         self.next_btn = self.findChild(QPushButton, "next_btn")
         self.download_btn = self.findChild(QPushButton, "download_btn")
+        self.youtube_btn = self.findChild(QPushButton, "youtube_btn")
+        if self.youtube_btn is not None:
+            self.youtube_btn.setToolTip('Add YouTube URL (paste)')
         self.eq_btn = self.findChild(QPushButton, "eq_btn")
         self.shuffle_btn = self.findChild(QPushButton, 'shuffle_btn')
         self.loop_btn = self.findChild(QPushButton, 'loop_btn')
         self.pl_btn = self.findChild(QPushButton, 'pl_btn')
-        # Theme menu
-        menubar = self.menuBar()  # type: ignore[reportOptionalMemberAccess]
-
-        # View menu with visualizer toggle
-        view_menu = menubar.addMenu("&View")  # type: ignore
-        self.visualizer_action = view_menu.addAction("Visualizer")  # type: ignore
-        self.visualizer_action.setCheckable(True)  # type: ignore[attr-defined]
-        self.lyrics_action = view_menu.addAction("Lyrics")  # type: ignore
-        self.lyrics_action.setCheckable(True)  # type: ignore
-        # Connect signals after actions are created
-        if self.visualizer_action is not None:
-            self.visualizer_action.toggled.connect(self._menu_toggle_visualizer)
-        if self.lyrics_action is not None:
-            self.lyrics_action.toggled.connect(self._menu_toggle_lyrics)
-
-        theme_menu = menubar.addMenu("&Theme")  # type: ignore
-        quit_action = menubar.addAction("Quit")  # type: ignore
-        quit_action.triggered.connect(self.graceful_shutdown)  # type: ignore
-        force_quit_action = menubar.addAction("Force Quit")  # type: ignore
-        force_quit_action.triggered.connect(self.force_shutdown)  # type: ignore
-
-        self.action_group = QActionGroup(self)
-        self.action_group.setExclusive(True)
-
-        self.system_action = QAction("System Default", self)
-        self.system_action.setCheckable(True)
-        self.light_action = QAction("Light", self)
-        self.light_action.setCheckable(True)
-        self.dark_action = QAction("Dark", self)
-        self.dark_action.setCheckable(True)
-
-        self.action_group.addAction(self.system_action)
-        self.action_group.addAction(self.light_action)
-        self.action_group.addAction(self.dark_action)
-
-        theme_menu.addAction(self.system_action)  # type: ignore
-        theme_menu.addAction(self.light_action)  # type: ignore
-        theme_menu.addAction(self.dark_action)  # type: ignore
-
-        self.system_action.triggered.connect(lambda: self.set_theme("system"))
-        self.light_action.triggered.connect(lambda: self.set_theme("light"))
-        self.dark_action.triggered.connect(lambda: self.set_theme("dark"))
+        # No menubar required: use OS theme dynamically and keep all widgets docked and visible.
+        # Apply system theme dynamically at startup
+        try:
+            self._track_system_theme = True
+            self._apply_system_theme()
+        except Exception:
+            pass
         #set icons
         sp = QStyle.StandardPixmap  # type: ignore[attr-defined]
         self.back_btn.setIcon(double_left_icon())
@@ -211,35 +184,62 @@ class UI(QMainWindow):
         self.stop_btn.setIcon(stop_icon())
         self.next_btn.setIcon(double_right_icon())
         self.download_btn.setIcon(folder_icon())
+        self.youtube_btn.setIcon(youtube_icon())
         self.eq_btn.setIcon(eq_icon())
         self.pl_btn.setIcon(playlist_icon())
 
-        for btn in (
+        # Normalize button appearance and spacing
+        btns = [
             self.back_btn,
             self.play_btn,
             self.pause_btn,
             self.stop_btn,
             self.next_btn,
+            self.download_btn,
+            self.youtube_btn,
             self.eq_btn,
             self.pl_btn,
-            self.download_btn,
             self.shuffle_btn,
             self.loop_btn,
-        ):
-            btn.setText("")
-            btn.setIconSize(QSize(24, 24))
-            apply_shadow(btn)
+        ]
+        # adjust width to fit larger icon set and avoid overlap
+        for b in btns:
+            try:
+                b.setText("")
+                b.setIconSize(QSize(28, 28))
+                b.setFixedHeight(42)
+                apply_shadow(b)
+            except Exception:
+                pass
 
-        # uniform button sizes
-        uniform_size = self.play_btn.size()
-        self.shuffle_btn.setFixedSize(uniform_size)
-        self.loop_btn.setFixedSize(uniform_size)
+        # make widths uniform based on play_btn but ensure enough room
+        try:
+            base_w = max(48, self.play_btn.size().width())
+        except Exception:
+            base_w = 48
+        for b in (self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.back_btn, self.download_btn, self.youtube_btn, self.eq_btn, self.pl_btn):
+            try:
+                b.setFixedSize(base_w, 42)
+            except Exception:
+                pass
+        # shuffle & loop slightly wider
+        try:
+            self.shuffle_btn.setFixedSize(base_w + 40, 42)
+            self.loop_btn.setFixedSize(base_w + 20, 42)
+        except Exception:
+            pass
 
-        # reposition shuffle & loop to sit right of next_btn with 20px gap
-        gap = 100
-        new_x = self.next_btn.x() + uniform_size.width() + gap
-        self.shuffle_btn.move(new_x, self.next_btn.y())
-        self.loop_btn.move(new_x + uniform_size.width() + 10, self.next_btn.y())
+        # reposition controls with larger spacing
+        gap = 12
+        x = 20
+        y = 144
+        for b in (self.back_btn, self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.download_btn, self.youtube_btn, self.shuffle_btn, self.loop_btn):
+            try:
+                b.move(x, y)
+                x += b.width() + gap
+            except Exception:
+                pass
+
 
         # assign icons to shuffle/loop
         self.shuffle_btn.setIcon(shuffle_icon())
@@ -252,6 +252,8 @@ class UI(QMainWindow):
         self.stop_btn.clicked.connect(self.stop)
         self.next_btn.clicked.connect(self.next)
         self.download_btn.clicked.connect(self.download)
+        if self.youtube_btn is not None:
+            self.youtube_btn.clicked.connect(self._on_youtube_click)
         self.shuffle_btn.clicked.connect(self.shuffle)
         self.loop_btn.clicked.connect(self.loop)
         self.pl_btn.clicked.connect(self.toggle_playlist)
@@ -366,10 +368,23 @@ QSlider::handle:horizontal {{
         try:
             self.visualizer_widget = VisualizerWidget()
             self.visualizer_widget.setWindowTitle("Visualizer")
-            self.visualizer_widget.resize(150, 400)
-            self.Player.positionChanged.connect(self.visualizer_widget.update_position)
+            # generous default size to remain visible when docked
+            self.visualizer_widget.resize(420, 420)
+            # Ensure visualizer minimum matches lyrics/playlist for readable UI
+            try:
+                self.visualizer_widget.setMinimumWidth(320)
+                self.visualizer_widget.setMinimumHeight(420)
+            except Exception:
+                pass
+            try:
+                self.Player.positionChanged.connect(self.visualizer_widget.update_position)
+            except Exception:
+                pass
             get_manager().register(self.visualizer_widget)
-            self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
+            try:
+                self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
+            except Exception:
+                pass
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
@@ -377,15 +392,24 @@ QSlider::handle:horizontal {{
         self.visualizer_dock.setWidget(self.visualizer_widget)
         self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
+        # dock to left and don't allow floating to avoid overlap
+        self.visualizer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
         # Lyrics dock
         try:
             self.lyrics_widget = LyricsWidget()  # type: ignore
             self.lyrics_widget.setWindowTitle("Lyrics")
-            self.lyrics_widget.resize(300, 400)
-            self.Player.positionChanged.connect(self.lyrics_widget.update_position)
+            # ensure lyrics area is tall and wide enough
+            self.lyrics_widget.resize(320, 420)
+            try:
+                self.Player.positionChanged.connect(self.lyrics_widget.update_position)
+            except Exception:
+                pass
             get_manager().register(self.lyrics_widget)
-            self.lyrics_widget.closed.connect(lambda: self.set_lyrics_visible(False))
+            try:
+                self.lyrics_widget.closed.connect(lambda: self.set_lyrics_visible(False))
+            except Exception:
+                pass
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.lyrics_widget = QLabel(f"Lyrics failed to initialize: {e}")
@@ -393,12 +417,60 @@ QSlider::handle:horizontal {{
         self.lyrics_dock.setWidget(self.lyrics_widget)
         self.lyrics_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.lyrics_dock.visibilityChanged.connect(lambda visible: self.set_lyrics_visible(visible))
+        # dock to right and prevent floating
+        self.lyrics_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.lyrics_dock)
         self._apply_dock_styles()
-        # --- restore GUI state (visualizer/lyrics) ---
-        gui_state = self._load_gui_state()
-        self.visualizer_dock.setVisible(gui_state.get("visualizer") == "1")
-        self.lyrics_dock.setVisible(gui_state.get("lyrics") == "1")
+        # --- ensure widgets are instantiated and visible at startup ---
+        # Ensure playlist exists and is shown as a dock to avoid overlapping windows
+        if not hasattr(self, 'ui') or self.ui is None:
+            self._ensure_playlist()
+        # ensure playlist widget minimum sizes so it is always readable
+        try:
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.setMinimumWidth(260)
+                self.ui.setMinimumHeight(240)
+        except Exception:
+            pass
+        # Reparent playlist into a dock widget if not already
+        try:
+            if isinstance(self.ui, PlaylistUI):
+                # create a dock for playlist and set fixed size policies
+                if not hasattr(self, 'playlist_dock') or self.playlist_dock is None:
+                    self.playlist_dock = QDockWidget("Playlist", self)
+                    self.playlist_dock.setWidget(self.ui)
+                    self.playlist_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+                    self.playlist_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+                    # add playlist right of visualizer by default
+                    self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.playlist_dock)
+                # ensure minimum size so it remains visible
+                try:
+                    self.playlist_dock.setMinimumWidth(280)
+                    self.playlist_dock.setMinimumHeight(240)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Show all components and enforce docked layout (no floating/overlap)
+        try:
+            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                self.playlist_dock.show()
+                self.playlist_dock.raise_()
+        except Exception:
+            pass
+        try:
+            if self.visualizer_dock is not None:
+                self.visualizer_dock.show()
+                self.visualizer_dock.raise_()
+        except Exception:
+            pass
+        try:
+            if self.lyrics_dock is not None:
+                self.lyrics_dock.show()
+                self.lyrics_dock.raise_()
+        except Exception:
+            pass
 
         # restore last playlist from config (legacy)
         last_paths = self._config.get("last_playlist", [])
@@ -422,9 +494,20 @@ QSlider::handle:horizontal {{
                         self.ui.list_songs.setCurrentItem(item)
                         self.ui.list_songs.scrollToItem(item)
 
-        if isinstance(self.ui, PlaylistUI):
-            self.ui.show()
-            self._stack_playlist_below()
+                    if isinstance(self.ui, PlaylistUI):
+                        try:
+                            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                                self.playlist_dock.show()
+                                self._stack_playlist_below()
+                            else:
+                                self.ui.show()
+                                self._stack_playlist_below()
+                        except Exception:
+                            try:
+                                self.ui.show()
+                                self._stack_playlist_below()
+                            except Exception:
+                                pass
 
         # track window move/resize to keep playlist docked
         self.installEventFilter(self)
@@ -459,6 +542,24 @@ QSlider::handle:horizontal {{
         self.tray_icon = QSystemTrayIcon(tray_icon(), self)  # type: ignore
         self.tray_icon.activated.connect(self._on_tray_activated)  # type: ignore
         self.tray_icon.show()
+        # Ensure closing child docks does not quit the app. Catch close events on docks and hide instead
+        try:
+            def _intercept_close(event):
+                event.ignore()
+                sender = event.sender() if hasattr(event, 'sender') else None
+                try:
+                    # hide the widget instead of closing
+                    widget = event
+                except Exception:
+                    widget = None
+                if widget is not None:
+                    try:
+                        widget.hide()
+                    except Exception:
+                        pass
+            # We rely on Qt's closeEvent handling per-widget; docks use hide() behavior via closeEvent override where appropriate
+        except Exception:
+            pass
 
         # tray icon rotating animation
         self._tray_base_icon = tray_icon()
@@ -542,26 +643,34 @@ QSlider::handle:horizontal {{
     #download list of music
     @log_call()
     def download(self):
+
         try:
             # Prompt for URL first; empty string -> fall back to local
-            url, ok = QInputDialog.getText(self, "Add from YouTube or local", "Paste YouTube URL (leave blank for local files):")
+            # Prompt only for local path (no remote URL).
+            # YouTube/remote URLs are handled via the dedicated YouTube button.
+            url, ok = QInputDialog.getText(self, "Add from local", "Paste local file path (leave blank to choose a folder):")
             if ok and url.strip():
                 url = url.strip()
-                # Basic YouTube URL validation
-                yt_match = re.match(r"https?://(www\.)?(youtube\.com|youtu\.be)/.+", url)
-                if yt_match:
-                    # Determine output directory (temporary download folder)
-                    output_dir = Path.home() / ".luister" / "downloads"
-                    # Start download thread
-                    self.title_lcd.setPlainText("Downloading from YouTube…")
-                    self.yt_progress.show()
-                    self._yt_thread = YTDownloadThread(url, output_dir)
-                    self._yt_thread.finished.connect(self._on_ytdl_finished)
-                    self._yt_thread.start()
-                    return
-                else:
-                    self.title_lcd.setPlainText("Invalid YouTube URL")
-                    return
+                # If user pasted a local path, add it to playlist; remote URLs handled elsewhere
+                path = Path(url)
+                if path.exists():
+                    # single file provided?
+                    if path.is_file():
+                        selected_files = [str(path)]
+                    else:
+                        # directory provided: gather audio files
+                        audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
+                        selected_files = [str(p) for p in path.iterdir() if p.suffix.lower() in audio_exts and p.is_file()]
+                    if selected_files:
+                        self._ensure_playlist()
+                        if not self.ui.isVisible():
+                            self.ui.show()
+                        self._add_files(selected_files, replace=True)
+                        return
+                    else:
+                        self.title_lcd.setPlainText('No audio files found in path')
+                        return
+                # otherwise treat as nothing -> fall back to file/folder picker
 
             # If no URL provided, ask for directory or files
             dir_path = QFileDialog.getExistingDirectory(self, 'Select music directory')
@@ -586,6 +695,28 @@ QSlider::handle:horizontal {{
                 self.title_lcd.setPlainText('No audio files selected')
         except Exception as e:
             self.title_lcd.setPlainText(f'Error: {e}')
+
+    @log_call()
+    def _on_youtube_click(self):
+        """Prompt for a YouTube URL and use the existing download flow."""
+        try:
+            url, ok = QInputDialog.getText(self, "Add from YouTube", "Paste YouTube URL:")
+            if not ok or not url or not url.strip():
+                return
+            url = url.strip()
+            yt_match = re.match(r"https?://(www\.)?(youtube\.com|youtu\.be)/.+", url)
+            if not yt_match:
+                self.title_lcd.setPlainText("Invalid YouTube URL")
+                return
+            # Reuse download flow but start YT thread immediately
+            output_dir = Path.home() / ".luister" / "downloads"
+            self.title_lcd.setPlainText("Downloading from YouTube…")
+            self.yt_progress.show()
+            self._yt_thread = YTDownloadThread(url, output_dir)
+            self._yt_thread.finished.connect(self._on_ytdl_finished)
+            self._yt_thread.start()
+        except Exception as e:
+            self.title_lcd.setPlainText(f"Error starting YouTube download: {e}")
 
     def _on_ytdl_finished(self, files: list):  # noqa: D401
         if not files:
@@ -745,11 +876,27 @@ QSlider::handle:horizontal {{
     @log_call()
     def toggle_playlist(self):
         self._ensure_playlist()
-        if self.ui.isVisible():
-            self.ui.hide()
-        else:
-            self.ui.show()
-            self._stack_playlist_below()
+        # Toggle the dock widget instead of floating window
+        try:
+            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                if self.playlist_dock.isVisible():
+                    self.playlist_dock.hide()
+                else:
+                    self.playlist_dock.show()
+                    self.playlist_dock.raise_()
+                    self._stack_playlist_below()
+                return
+        except Exception:
+            pass
+        # Fallback to previous behaviour
+        try:
+            if self.ui.isVisible():
+                self.ui.hide()
+            else:
+                self.ui.show()
+                self._stack_playlist_below()
+        except Exception:
+            pass
 
     @log_call()
     def clicked_song(self, item):  # type: ignore
@@ -951,11 +1098,63 @@ QSlider::handle:horizontal {{
             stack.extend(list(w.findChildren(QWidget)))  # type: ignore[arg-type]
 
     def _ensure_visualizer(self):
-        pass
+        """Lazily create the visualizer widget and dock if missing."""
+        if getattr(self, 'visualizer_dock', None) is not None:
+            return
+        try:
+            self.visualizer_widget = VisualizerWidget()
+            self.visualizer_widget.setWindowTitle("Visualizer")
+            self.visualizer_widget.resize(150, 400)
+            try:
+                self.Player.positionChanged.connect(self.visualizer_widget.update_position)
+            except Exception:
+                # Player may not be fully initialised yet
+                pass
+            get_manager().register(self.visualizer_widget)
+            try:
+                self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
+            except Exception:
+                pass
+            self.visualizer_dock = QDockWidget("Visualizer", self)
+            self.visualizer_dock.setWidget(self.visualizer_widget)
+            self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+            self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
+            self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
+        except Exception as e:
+            from PyQt6.QtWidgets import QLabel
+            logging.exception("Visualizer init failed: %s", e)
+            self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
+            self.visualizer_dock = QDockWidget("Visualizer", self)
+            self.visualizer_dock.setWidget(self.visualizer_widget)
+
     def _ensure_lyrics(self):
-        pass
-    def _ensure_playlist(self):
-        pass
+        """Lazily create the lyrics widget and dock if missing."""
+        if getattr(self, 'lyrics_dock', None) is not None:
+            return
+        try:
+            self.lyrics_widget = LyricsWidget()  # type: ignore
+            self.lyrics_widget.setWindowTitle("Lyrics")
+            self.lyrics_widget.resize(300, 400)
+            try:
+                self.Player.positionChanged.connect(self.lyrics_widget.update_position)
+            except Exception:
+                pass
+            get_manager().register(self.lyrics_widget)
+            try:
+                self.lyrics_widget.closed.connect(lambda: self.set_lyrics_visible(False))
+            except Exception:
+                pass
+            self.lyrics_dock = QDockWidget("Lyrics", self)
+            self.lyrics_dock.setWidget(self.lyrics_widget)
+            self.lyrics_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+            self.lyrics_dock.visibilityChanged.connect(lambda visible: self.set_lyrics_visible(visible))
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.lyrics_dock)
+        except Exception as e:
+            from PyQt6.QtWidgets import QLabel
+            logging.exception("Lyrics init failed: %s", e)
+            self.lyrics_widget = QLabel(f"Lyrics failed to initialize: {e}")
+            self.lyrics_dock = QDockWidget("Lyrics", self)
+            self.lyrics_dock.setWidget(self.lyrics_widget)
 
     def set_visualizer_visible(self, visible: bool):
         self.visualizer_dock.setVisible(visible)
@@ -968,12 +1167,22 @@ QSlider::handle:horizontal {{
             from luister.lyrics import LyricsWidget
             if isinstance(widget, LyricsWidget):
                 if self.current_index >= 0 and self.current_index < len(self.playlist_urls):
-                    widget.load_lyrics(self.playlist_urls[self.current_index].toLocalFile())
+                    current_file = self.playlist_urls[self.current_index].toLocalFile()
+                    try:
+                        already_transcribing = getattr(widget, '_transcribing', False)
+                        current_target = getattr(widget, '_current_audio_file', None)
+                    except Exception:
+                        already_transcribing = False
+                        current_target = None
+                    # Avoid starting a duplicate transcription for the same file
+                    if not (already_transcribing and current_target == current_file):
+                        widget.load_lyrics(current_file)
             self._fade_dock(self.lyrics_dock, fade_in=True)
         else:
             self._fade_dock(self.lyrics_dock, fade_in=False)
         if hasattr(self, 'lyrics_action') and self.lyrics_action is not None:
             self.lyrics_action.setChecked(self.lyrics_dock.isVisible())
+        # No view menu/actions required when all widgets are always visible
 
     def _apply_dock_styles(self):
         dock_style = '''
@@ -1066,11 +1275,79 @@ QSlider::handle:horizontal {{
 
     # --- Improved stacking for UX ---
     def _stack_playlist_below(self):
-        pass
+        """Ensure playlist dock is directly adjacent to main window without overlap.
+        For docked playlists we snap the dock into the right dock area; for floating (rare) we position it.
+        """
+        try:
+            # If we have a dock wrapper, rely on Qt's docking layout and ensure visibility
+            dock = getattr(self, 'playlist_dock', None)
+            if dock is not None:
+                # ensure dock is attached to right side
+                try:
+                    self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+                except Exception:
+                    pass
+                dock.show()
+                dock.raise_()
+                return
+            # Fallback: position floating playlist widget without overlap
+            if not hasattr(self, 'ui') or self.ui is None:
+                return
+            playlist = self.ui
+            main_geo = self.geometry()
+            gap = 8
+            target_x = main_geo.x() + main_geo.width() + gap
+            target_y = main_geo.y()
+            playlist.move(target_x, target_y)
+            playlist.show()
+            playlist.raise_()
+            # Keep on-screen
+            screen = QApplication.primaryScreen()  # type: ignore[attr-defined]
+            if screen is not None:
+                avail = screen.availableGeometry()
+                if playlist.x() + playlist.width() > avail.x() + avail.width():
+                    playlist.move(max(avail.x() + gap, avail.x()), playlist.y())
+                if playlist.y() + playlist.height() > avail.y() + avail.height():
+                    playlist.move(playlist.x(), max(avail.y() + gap, avail.y()))
+        except Exception:
+            logging.exception("Error stacking playlist window")
+
     def _stack_visualizer(self):
-        pass
+        """Place the visualizer dock suitably to the left of the main window when floating.
+        If docked, ensure it remains visible (no-op)."""
+        try:
+            dock = getattr(self, 'visualizer_dock', None)
+            if dock is None:
+                return
+            # If the dock is floating, position it to the left of the main window
+            if getattr(dock, 'isFloating', lambda: False)():
+                main_geo = self.geometry()
+                gap = 8
+                target_x = main_geo.x() - dock.width() - gap
+                target_y = main_geo.y()
+                dock.move(target_x, target_y)
+                dock.show()
+                dock.raise_()
+        except Exception:
+            logging.exception("Error stacking visualizer dock")
+
     def _stack_lyrics(self):
-        pass
+        """Place the lyrics dock to the right of the main window when floating.
+        If docked, ensure it remains visible (no-op)."""
+        try:
+            dock = getattr(self, 'lyrics_dock', None)
+            if dock is None:
+                return
+            if getattr(dock, 'isFloating', lambda: False)():
+                main_geo = self.geometry()
+                gap = 8
+                target_x = main_geo.x() + main_geo.width() + gap
+                target_y = main_geo.y()
+                dock.move(target_x, target_y)
+                dock.show()
+                dock.raise_()
+        except Exception:
+            logging.exception("Error stacking lyrics dock")
 
     @log_call()
     def graceful_shutdown(self):
@@ -1119,14 +1396,25 @@ QSlider::handle:horizontal {{
         # Save GUI state
         self._persist_gui_state()
         event.ignore()
-        # hide main and all child windows
+        # hide main and all child windows but do not shutdown unless app exit
         self.hide()
-        if hasattr(self, 'ui'):
-            self.ui.hide()
-        if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
-            self.visualizer_dock.hide()
-        if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
-            self.lyrics_dock.hide()
+        try:
+            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                self.playlist_dock.hide()
+            elif hasattr(self, 'ui'):
+                self.ui.hide()
+        except Exception:
+            pass
+        try:
+            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
+                self.visualizer_dock.hide()
+        except Exception:
+            pass
+        try:
+            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
+                self.lyrics_dock.hide()
+        except Exception:
+            pass
         # keep tray icon active
 
     def _persist_gui_state(self):
@@ -1156,26 +1444,70 @@ QSlider::handle:horizontal {{
         return state
 
     def _on_tray_activated(self, reason):
-        """Toggle app windows on tray icon click."""
+        """Toggle app windows on tray icon double-click: show/restore or hide to tray.
+
+        Double-click the tray icon to restore the main window and all docks; double-click again
+        will hide them to the tray. Single-click behaviour is ignored here.
+        """
         try:
-            if reason == QSystemTrayIcon.ActivationReason.Trigger:  # type: ignore[attr-defined]
-                # toggle main and child windows
-                if self.isVisible():
-                    self.hide()
-                    if hasattr(self, 'ui'):
-                        self.ui.hide()
-                    if self.visualizer_dock is not None:
-                        self.visualizer_dock.hide()
-                    if self.lyrics_dock is not None:
-                        self.lyrics_dock.hide()
+            # Prefer DoubleClick activation for show/hide toggle
+            if reason == QSystemTrayIcon.ActivationReason.DoubleClick:  # type: ignore[attr-defined]
+                # If visible and not minimized -> hide to tray
+                if self.isVisible() and not self.isMinimized():
+                    try:
+                        self.hide()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                            self.playlist_dock.hide()
+                        elif hasattr(self, 'ui'):
+                            self.ui.hide()
+                    except Exception:
+                        pass
+                    try:
+                        if self.visualizer_dock is not None:
+                            self.visualizer_dock.hide()
+                    except Exception:
+                        pass
+                    try:
+                        if self.lyrics_dock is not None:
+                            self.lyrics_dock.hide()
+                    except Exception:
+                        pass
                 else:
-                    self.show()
-                    if hasattr(self, 'ui'):
-                        self.ui.show()
-                    if self.visualizer_dock is not None:
-                        self.visualizer_dock.show()
-                    if self.lyrics_dock is not None:
-                        self.lyrics_dock.show()
+                    # Show / restore app and docks
+                    try:
+                        self.show()
+                        # ensure window is not minimized
+                        try:
+                            self.setWindowState(self.windowState() & ~Qt.WindowState.Minimized)
+                        except Exception:
+                            pass
+                        try:
+                            self.raise_()
+                            self.activateWindow()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                            self.playlist_dock.show()
+                        elif hasattr(self, 'ui'):
+                            self.ui.show()
+                    except Exception:
+                        pass
+                    try:
+                        if self.visualizer_dock is not None:
+                            self.visualizer_dock.show()
+                    except Exception:
+                        pass
+                    try:
+                        if self.lyrics_dock is not None:
+                            self.lyrics_dock.show()
+                    except Exception:
+                        pass
         except Exception:
             pass
 

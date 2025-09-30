@@ -33,6 +33,13 @@ dependencies = [
     "pyaudio>=0.2.11",
     "yt-dlp>=2023.0.0",
     "pyinstaller>=6.0.0,<6.15.0",
+    # Installer GUI/CLI helpers
+    "appdirs>=1.4.4",
+    "GitPython>=3.1.30",
+    "pyshortcuts>=1.8.2",
+    "Pillow>=9.0.0",
+    "psutil>=5.9.0",
+    "PySide6>=6.6.0",
 ]
 
 [project.optional-dependencies]
