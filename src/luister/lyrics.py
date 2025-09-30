@@ -110,6 +110,9 @@ class LyricsWidget(QWidget):
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         if dlg.exec() != QDialog.DialogCode.Accepted:
+            # User cancelled transcription options — notify listeners with empty segments
+            # so any pending playback (set by the caller) can proceed.
+            self.segments_ready.emit([])
             return
         language = lang_combo.currentText()
         model_size = model_combo.currentText()

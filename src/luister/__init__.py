@@ -170,6 +170,14 @@ class UI(QMainWindow):
         self.loop_btn = self.findChild(QPushButton, 'loop_btn')
         self.pl_btn = self.findChild(QPushButton, 'pl_btn')
         # No menubar required: use OS theme dynamically and keep all widgets docked and visible.
+        # Ensure theme QAction attributes exist so menu-sync calls are safe even without a menubar
+        # These actions are checkable placeholders only; the app does not expose a menubar in normal use
+        self.system_action = QAction("System", self)
+        self.system_action.setCheckable(True)
+        self.light_action = QAction("Light", self)
+        self.light_action.setCheckable(True)
+        self.dark_action = QAction("Dark", self)
+        self.dark_action.setCheckable(True)
         # Apply system theme dynamically at startup
         try:
             self._track_system_theme = True
@@ -563,6 +571,15 @@ QSlider::handle:horizontal {{
 
         # tray icon rotating animation
         self._tray_base_icon = tray_icon()
+        # Ensure the application/window taskbar uses the same icon as the system tray
+        try:
+            app = QApplication.instance()
+            # Only call setWindowIcon when we have a QApplication instance (type-checker friendly)
+            if isinstance(app, QApplication):
+                app.setWindowIcon(self._tray_base_icon)
+        except Exception:
+            # benign if setting app icon fails on some platforms
+            pass
         self._tray_rotation_angle = 0
         self._tray_timer = QTimer(self)
         self._tray_timer.timeout.connect(self._rotate_tray_icon)
@@ -1190,7 +1207,6 @@ QSlider::handle:horizontal {{
             background: rgba(255,255,255,0.15);
             border-radius: 16px;
             border: 1.5px solid rgba(0,0,0,0.08);
-            box-shadow: 0 8px 32px 0 rgba(31,38,135,0.37);
         }
         QDockWidget::title {
             background: rgba(255,255,255,0.25);
@@ -1198,7 +1214,6 @@ QSlider::handle:horizontal {{
             border-top-right-radius: 16px;
             padding: 6px 12px;
             color: palette(window-text);
-            transition: background 0.2s;
         }
         QDockWidget::title:hover {
             background: rgba(255,255,255,0.40);
@@ -1392,30 +1407,20 @@ QSlider::handle:horizontal {{
             self.Player.play()
             self.update_play_stop_icon()
 
-    def closeEvent(self, event):  # override close to hide windows instead of exit
-        # Save GUI state
-        self._persist_gui_state()
-        event.ignore()
-        # hide main and all child windows but do not shutdown unless app exit
-        self.hide()
+    def closeEvent(self, event):
+        """On window close (X) perform a graceful shutdown.
+
+        This persists state, shuts down registered components, and quits the app.
+        If graceful shutdown fails we log and accept the event to allow the close to proceed.
+        """
         try:
-            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
-                self.playlist_dock.hide()
-            elif hasattr(self, 'ui'):
-                self.ui.hide()
-        except Exception:
-            pass
-        try:
-            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
-                self.visualizer_dock.hide()
-        except Exception:
-            pass
-        try:
-            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
-                self.lyrics_dock.hide()
-        except Exception:
-            pass
-        # keep tray icon active
+            self.graceful_shutdown()
+        except Exception as exc:
+            logging.exception("Error during graceful shutdown triggered by closeEvent: %s", exc)
+            try:
+                event.accept()
+            except Exception:
+                pass
 
     def _persist_gui_state(self):
         try:
@@ -1481,7 +1486,7 @@ QSlider::handle:horizontal {{
                         self.show()
                         # ensure window is not minimized
                         try:
-                            self.setWindowState(self.windowState() & ~Qt.WindowState.Minimized)
+                            self.showNormal()
                         except Exception:
                             pass
                         try:
@@ -1563,7 +1568,6 @@ class YTDownloadThread(QThread):
         try:
             self._output_dir.mkdir(parents=True, exist_ok=True)
             before = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
-
             # Build yt-dlp command
             cmd = [
                 "yt-dlp",
@@ -1577,12 +1581,29 @@ class YTDownloadThread(QThread):
                 self._url,
             ]
 
-            subprocess.run(cmd, check=False)
+            try:
+                # Capture stdout/stderr for diagnostics if yt-dlp fails
+                proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+            except FileNotFoundError:
+                logging.error("yt-dlp not found; please install yt-dlp and ensure it is on PATH")
+                self.finished.emit([])
+                return
+            except Exception as exc:
+                logging.exception("Unexpected error running yt-dlp: %s", exc)
+                self.finished.emit([])
+                return
+
+            if proc.returncode != 0:
+                logging.error("yt-dlp failed with return code %s; stdout=%s stderr=%s", proc.returncode, proc.stdout, proc.stderr)
+                self.finished.emit([])
+                return
 
             after = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
             new_files = [str(p) for p in sorted(after - before)]
+            logging.info("yt-dlp downloaded %d new files", len(new_files))
             self.finished.emit(new_files)
         except Exception:
+            logging.exception("YTDownloadThread encountered an unexpected error")
             self.finished.emit([])
 
 def main():
