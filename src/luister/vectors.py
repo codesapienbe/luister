@@ -54,26 +54,6 @@ def pause_icon(color: QColor | None = None) -> QIcon:
     return _make_icon(path, color)
 
 
-def arrow_left_icon(color: QColor | None = None) -> QIcon:
-    path = QPainterPath()
-    w, h = _ICON_SIZE.width(), _ICON_SIZE.height()
-    path.moveTo(w * 0.7, h * 0.2)
-    path.lineTo(w * 0.3, h * 0.5)
-    path.lineTo(w * 0.7, h * 0.8)
-    path.closeSubpath()
-    return _make_icon(path, color)
-
-
-def arrow_right_icon(color: QColor | None = None) -> QIcon:
-    path = QPainterPath()
-    w, h = _ICON_SIZE.width(), _ICON_SIZE.height()
-    path.moveTo(w * 0.3, h * 0.2)
-    path.lineTo(w * 0.7, h * 0.5)
-    path.lineTo(w * 0.3, h * 0.8)
-    path.closeSubpath()
-    return _make_icon(path, color)
-
-
 # Additional icons
 
 def eq_icon(color: QColor | None = None) -> QIcon:

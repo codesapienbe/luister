@@ -424,6 +424,50 @@ QSlider::handle:horizontal {{
         self.lyrics_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.lyrics_dock)
         self._apply_dock_styles()
+        # Apply persisted GUI state (visualizer/lyrics visibility) so docks are visible at startup
+        try:
+            state = self._load_gui_state()
+            if state.get('visualizer', '0') == '1':
+                try:
+                    if self.visualizer_dock is not None:
+                        self.visualizer_dock.show()
+                        self.visualizer_dock.raise_()
+                except Exception:
+                    pass
+            else:
+                try:
+                    if self.visualizer_dock is not None:
+                        self.visualizer_dock.hide()
+                except Exception:
+                    pass
+            if state.get('lyrics', '0') == '1':
+                try:
+                    if self.lyrics_dock is not None:
+                        self.lyrics_dock.show()
+                        self.lyrics_dock.raise_()
+                except Exception:
+                    pass
+            else:
+                try:
+                    if self.lyrics_dock is not None:
+                        self.lyrics_dock.hide()
+                except Exception:
+                    pass
+        except Exception:
+            # if loading state fails, default to showing docks
+            try:
+                if self.visualizer_dock is not None:
+                    self.visualizer_dock.show()
+                    self.visualizer_dock.raise_()
+            except Exception:
+                pass
+            try:
+                if self.lyrics_dock is not None:
+                    self.lyrics_dock.show()
+                    self.lyrics_dock.raise_()
+            except Exception:
+                pass
+
         # --- ensure widgets are instantiated and visible at startup ---
         # Ensure playlist exists and is shown as a dock to avoid overlapping windows
         if not hasattr(self, 'ui') or self.ui is None:
