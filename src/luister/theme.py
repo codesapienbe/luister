@@ -14,29 +14,31 @@ class Theme:
     @staticmethod
     def light() -> QPalette:
         pal = QPalette()
-        pal.setColor(QPalette.ColorRole.Window, QColor("#FCFCF9"))
-        pal.setColor(QPalette.ColorRole.WindowText, QColor("#13343B"))
-        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFD"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#F2F2F0"))
-        pal.setColor(QPalette.ColorRole.Text, QColor("#13343B"))
-        pal.setColor(QPalette.ColorRole.Button, QColor("#EFEDE7"))
-        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#13343B"))
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#21808D"))
-        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FCFCF9"))
+        # Crystal glass inspired light palette: cool neutrals with soft cyan highlights
+        pal.setColor(QPalette.ColorRole.Window, QColor("#F6F8FA"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#0F2933"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#F2F6F8"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#0F2933"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#F8FBFC"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#0F2933"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#5AC8FA"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
         return pal
 
     @staticmethod
     def dark() -> QPalette:
         pal = QPalette()
-        pal.setColor(QPalette.ColorRole.Window, QColor("#1F2121"))
-        pal.setColor(QPalette.ColorRole.WindowText, QColor("#F5F5F5"))
-        pal.setColor(QPalette.ColorRole.Base, QColor("#262828"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#303131"))
-        pal.setColor(QPalette.ColorRole.Text, QColor("#F5F5F5"))
-        pal.setColor(QPalette.ColorRole.Button, QColor("#2A2C2C"))
-        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#F5F5F5"))
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#32B8C6"))
-        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#13343B"))
+        # Crystal glass inspired dark palette: translucent dark surfaces with cool cyan accent
+        pal.setColor(QPalette.ColorRole.Window, QColor("#111417"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#E8F6F9"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#0F1214"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#151819"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#E8F6F9"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#121416"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#E8F6F9"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#39BEE6"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#0F2933"))
         return pal
 
     @staticmethod
@@ -58,20 +60,21 @@ class Theme:
         app.setPalette(palette)
 
         # --- Glassmorphic style sheet -------------------------------------------------
+        # Tuned glass variables for a Crystal Glass look
         if theme == "light":
-            glass_bg = "#26FFFFFF"  # ~15% white
-            hover_bg = "#33FFFFFF"  # ~20%
-            pressed_bg = "#4DFFFFFF"  # ~30%
-            border_rgba = "rgba(255,255,255,0.25)"
-            groove_bg = "rgba(0,0,0,0.15)"
-            input_bg = "#40FFFFFF"  # ~25%
+            glass_bg = "#1AFFFFFF"  # subtle translucent white (~10%)
+            hover_bg = "#26FFFFFF"  # ~15%
+            pressed_bg = "#33FFFFFF"  # ~20%
+            border_rgba = "rgba(255,255,255,0.22)"
+            groove_bg = "rgba(15,41,51,0.06)"
+            input_bg = "#28FFFFFF"  # ~16%
         else:
-            glass_bg = "#33FFFFFF"  # ~20% white on dark
-            hover_bg = "#26FFFFFF"  # slightly less opaque
-            pressed_bg = "#4DFFFFFF"
-            border_rgba = "rgba(255,255,255,0.15)"
-            groove_bg = "rgba(255,255,255,0.10)"
-            input_bg = "#26FFFFFF"  # for dark inputs
+            glass_bg = "#22000000"  # translucent black (~13%) on dark
+            hover_bg = "#26FFFFFF"  # use light overlay for hover to mimic glossy effect
+            pressed_bg = "#33FFFFFF"
+            border_rgba = "rgba(255,255,255,0.08)"
+            groove_bg = "rgba(255,255,255,0.04)"
+            input_bg = "#22FFFFFF"  # subtle overlay for inputs
 
         app.setStyleSheet(
             f"""
@@ -90,29 +93,29 @@ class Theme:
                 border-radius: 16px;
             }}
 
-            /* Buttons */
+            /* Buttons: subtle etched border and soft highlight on hover */
             QPushButton {{
                 background-color: transparent;
                 color: palette(button-text);
                 border: 1px solid {border_rgba};
-                border-radius: 8px;
+                border-radius: 10px;
                 padding: 6px 12px;
             }}
             QPushButton:hover {{ background-color: {hover_bg}; }}
             QPushButton:pressed {{ background-color: {pressed_bg}; }}
             QPushButton:disabled {{ color: palette(mid); }}
 
-            /* Text inputs & lists */
+            /* Text inputs & lists: frosted glass surfaces */
             QTextEdit, QListWidget, QLineEdit {{
                 background-color: {input_bg};
                 color: palette(text);
                 border: 1px solid {border_rgba};
-                border-radius: 8px;
+                border-radius: 10px;
                 selection-background-color: palette(highlight);
                 selection-color: palette(highlighted-text);
             }}
 
-            /* Sliders */
+            /* Sliders: thin groove with highlight handle */
             QSlider::groove:horizontal {{
                 background: {groove_bg};
                 height: 4px;

@@ -34,7 +34,6 @@ from luister.vectors import (
     pause_icon,
     stop_icon,
     eq_icon,
-    playlist_icon,
     folder_icon,
     shuffle_icon,
     loop_icon,
@@ -97,7 +96,6 @@ class UI(QMainWindow):
         _mk_btn("shuffle_btn", 340, 150, 121, 25)
         _mk_btn("loop_btn", 470, 150, 61, 25)
         eq_btn = QPushButton("EQ", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(470, 70, 51, 25)
-        pl_btn = QPushButton("PL", central); pl_btn.setObjectName("pl_btn"); pl_btn.setGeometry(530, 70, 51, 25)
 
         # Sliders
         time_slider = QSlider(Qt.Orientation.Horizontal, central)
@@ -168,7 +166,6 @@ class UI(QMainWindow):
         self.eq_btn = self.findChild(QPushButton, "eq_btn")
         self.shuffle_btn = self.findChild(QPushButton, 'shuffle_btn')
         self.loop_btn = self.findChild(QPushButton, 'loop_btn')
-        self.pl_btn = self.findChild(QPushButton, 'pl_btn')
         # No menubar required: use OS theme dynamically and keep all widgets docked and visible.
         # Ensure theme QAction attributes exist so menu-sync calls are safe even without a menubar
         # These actions are checkable placeholders only; the app does not expose a menubar in normal use
@@ -194,7 +191,6 @@ class UI(QMainWindow):
         self.download_btn.setIcon(folder_icon())
         self.youtube_btn.setIcon(youtube_icon())
         self.eq_btn.setIcon(eq_icon())
-        self.pl_btn.setIcon(playlist_icon())
 
         # Normalize button appearance and spacing
         btns = [
@@ -206,7 +202,6 @@ class UI(QMainWindow):
             self.download_btn,
             self.youtube_btn,
             self.eq_btn,
-            self.pl_btn,
             self.shuffle_btn,
             self.loop_btn,
         ]
@@ -225,7 +220,7 @@ class UI(QMainWindow):
             base_w = max(48, self.play_btn.size().width())
         except Exception:
             base_w = 48
-        for b in (self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.back_btn, self.download_btn, self.youtube_btn, self.eq_btn, self.pl_btn):
+        for b in (self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.back_btn, self.download_btn, self.youtube_btn, self.eq_btn):
             try:
                 b.setFixedSize(base_w, 42)
             except Exception:
@@ -264,7 +259,7 @@ class UI(QMainWindow):
             self.youtube_btn.clicked.connect(self._on_youtube_click)
         self.shuffle_btn.clicked.connect(self.shuffle)
         self.loop_btn.clicked.connect(self.loop)
-        self.pl_btn.clicked.connect(self.toggle_playlist)
+        # playlist toggle removed: playlist is always shown as a dock
 
         #sliders
         self.time_slider = self.findChild(QSlider, 'time_slider')
@@ -1452,7 +1447,7 @@ QSlider::handle:horizontal {{
         """Toggle app windows on tray icon double-click: show/restore or hide to tray.
 
         Double-click the tray icon to restore the main window and all docks; double-click again
-        will hide them to the tray. Single-click behaviour is ignored here.
+        will hide them to the tray. Single-click behavior is ignored here.
         """
         try:
             # Prefer DoubleClick activation for show/hide toggle

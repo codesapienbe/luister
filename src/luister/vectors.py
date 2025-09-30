@@ -87,15 +87,7 @@ def eq_icon(color: QColor | None = None) -> QIcon:
     return _make_icon(path, color)
 
 
-def playlist_icon(color: QColor | None = None) -> QIcon:
-    path = QPainterPath()
-    w, h = _ICON_SIZE.width(), _ICON_SIZE.height()
-    spacing = h * 0.15
-    line_h = h * 0.12
-    for i in range(3):
-        y = spacing + i * (line_h + spacing)
-        path.addRect(w * 0.15, y, w * 0.7, line_h)
-    return _make_icon(path, color)
+# playlist_icon removed (unused) to reduce unused code surface area
 
 
 def folder_icon(color: QColor | None = None) -> QIcon:
