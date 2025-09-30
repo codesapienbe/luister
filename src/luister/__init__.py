@@ -701,52 +701,25 @@ QSlider::handle:horizontal {{
     def download(self):
 
         try:
-            # Prompt for URL first; empty string -> fall back to local
-            # Prompt only for local path (no remote URL).
-            # YouTube/remote URLs are handled via the dedicated YouTube button.
-            url, ok = QInputDialog.getText(self, "Add from local", "Paste local file path (leave blank to choose a folder):")
-            if ok and url.strip():
-                url = url.strip()
-                # If user pasted a local path, add it to playlist; remote URLs handled elsewhere
-                path = Path(url)
-                if path.exists():
-                    # single file provided?
-                    if path.is_file():
-                        selected_files = [str(path)]
-                    else:
-                        # directory provided: gather audio files
-                        audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
-                        selected_files = [str(p) for p in path.iterdir() if p.suffix.lower() in audio_exts and p.is_file()]
-                    if selected_files:
-                        self._ensure_playlist()
-                        if not self.ui.isVisible():
-                            self.ui.show()
-                        self._add_files(selected_files, replace=True)
-                        return
-                    else:
-                        self.title_lcd.setPlainText('No audio files found in path')
-                        return
-                # otherwise treat as nothing -> fall back to file/folder picker
-
-            # If no URL provided, ask for directory or files
-            dir_path = QFileDialog.getExistingDirectory(self, 'Select music directory')
-            selected_files: list[str] = []
-            if dir_path:
-                # Persist playlist directory
-                self._persist_playlist_dir(dir_path)
-                audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
-                for p in Path(dir_path).iterdir():
-                    if p.suffix.lower() in audio_exts and p.is_file():
-                        selected_files.append(str(p))
-            else:
-                files, _ = QFileDialog.getOpenFileNames(self, 'Select songs')
-                selected_files.extend(files)
-
-            if selected_files:
+            # Open file selection dialog for audio files only. URL workflows are handled
+            # by the dedicated YouTube button; this method now only selects songs.
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                'Select songs',
+                '',
+                'Audio Files (*.mp3 *.wav *.flac *.ogg *.m4a *.aac)'
+            )
+            if files:
+                # Persist playlist directory for convenience
+                try:
+                    first_dir = str(Path(files[0]).parent)
+                    self._persist_playlist_dir(first_dir)
+                except Exception:
+                    pass
                 self._ensure_playlist()
                 if not self.ui.isVisible():
                     self.ui.show()
-                self._add_files(selected_files, replace=True)
+                self._add_files(files, replace=True)
             else:
                 self.title_lcd.setPlainText('No audio files selected')
         except Exception as e:
@@ -1129,6 +1102,71 @@ QSlider::handle:horizontal {{
             if getattr(self, '_track_system_theme', False):
                 self._apply_system_theme()
         return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        """Adjust key widget geometry for responsive resizing without full-layout rewrite.
+
+        This method repositions/resizes main controls based on the current window width
+        so the UI remains usable when the user resizes the window.
+        """
+        try:
+            w = self.width()
+            # Time slider: maintain left margin and right margin relative to window
+            left = 20
+            ts_y = 109
+            ts_h = 21
+            ts_w = max(200, w - 160)
+            if hasattr(self, 'time_slider') and self.time_slider is not None:
+                try:
+                    self.time_slider.setGeometry(left, ts_y, ts_w, ts_h)
+                except Exception:
+                    pass
+
+            # Title display: expand/shrink with window
+            title_x = 210
+            title_h = 21
+            title_w = max(120, w - 240)
+            if hasattr(self, 'title_lcd') and self.title_lcd is not None:
+                try:
+                    self.title_lcd.setGeometry(title_x, 10, title_w, title_h)
+                except Exception:
+                    pass
+
+            # Volume slider: anchored near right side of title area
+            try:
+                vol_w = 131
+                vol_x = max(title_x + title_w - vol_w, w - vol_w - 20)
+                if hasattr(self, 'volume_slider') and self.volume_slider is not None:
+                    self.volume_slider.setGeometry(vol_x, 80, vol_w, 16)
+            except Exception:
+                pass
+
+            # Reflow control buttons horizontally with spacing
+            gap = 12
+            x = 20
+            y = 144
+            btns = (
+                getattr(self, 'back_btn', None),
+                getattr(self, 'play_btn', None),
+                getattr(self, 'pause_btn', None),
+                getattr(self, 'stop_btn', None),
+                getattr(self, 'next_btn', None),
+                getattr(self, 'download_btn', None),
+                getattr(self, 'youtube_btn', None),
+                getattr(self, 'shuffle_btn', None),
+                getattr(self, 'loop_btn', None),
+            )
+            for b in btns:
+                try:
+                    if b is None:
+                        continue
+                    b.move(x, y)
+                    x += b.width() + gap
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        super().resizeEvent(event)
 
     # --- Unified component visibility toggling and menu sync ---
     def _menu_toggle_visualizer(self, checked):
@@ -1646,9 +1684,34 @@ class YTDownloadThread(QThread):
             self.finished.emit([])
 
 def main():
+    import signal
+
     app = QApplication(sys.argv)
     UIWindow = UI()
-    app.exec()
+
+    def _handle_termination(signum, frame):
+        try:
+            UIWindow.graceful_shutdown()
+        except Exception:
+            logging.exception("Error during graceful shutdown from signal %s", signum)
+
+    # Register signal handlers for clean termination where supported
+    try:
+        signal.signal(signal.SIGINT, _handle_termination)
+    except Exception:
+        pass
+    try:
+        signal.signal(signal.SIGTERM, _handle_termination)
+    except Exception:
+        pass
+
+    try:
+        app.exec()
+    except KeyboardInterrupt:
+        try:
+            UIWindow.graceful_shutdown()
+        except Exception:
+            logging.exception("Error during graceful shutdown after KeyboardInterrupt")
 
 
 if __name__ == "__main__":
