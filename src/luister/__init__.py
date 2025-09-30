@@ -45,6 +45,10 @@ from luister.vectors import (
     youtube_icon,
 )
 from luister.visualizer import VisualizerWidget
+try:
+    from luister.video_widget import VideoWidget
+except Exception:
+    VideoWidget = None
 from luister.lyrics import LyricsWidget  # type: ignore
 import logging
 from typing import Optional
@@ -259,6 +263,15 @@ class UI(QMainWindow):
             self.youtube_btn.clicked.connect(self._on_youtube_click)
         self.shuffle_btn.clicked.connect(self.shuffle)
         self.loop_btn.clicked.connect(self.loop)
+        # Mode toggle: audio/video (lazy-init video widget when switched)
+        try:
+            from PyQt6.QtWidgets import QCheckBox
+            self.video_mode_toggle = QCheckBox("Video", central)
+            self.video_mode_toggle.setChecked(False)
+            self.video_mode_toggle.setGeometry(720, 144, 60, 25)
+            self.video_mode_toggle.stateChanged.connect(lambda s: self._on_video_mode_changed(bool(s)))
+        except Exception:
+            self.video_mode_toggle = None
         # playlist toggle removed: playlist is always shown as a dock
 
         #sliders
@@ -398,6 +411,9 @@ QSlider::handle:horizontal {{
         # dock to left and don't allow floating to avoid overlap
         self.visualizer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
+        # Video container (optional) - created lazily when switching to video mode
+        self.video_widget = None
+        self.video_dock = None
         # Lyrics dock
         try:
             self.lyrics_widget = LyricsWidget()  # type: ignore
@@ -1214,6 +1230,7 @@ QSlider::handle:horizontal {{
             self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
             self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
             self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
+        # ensure video dock created to the right of visualizer if video mode enabled
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             logging.exception("Visualizer init failed: %s", e)
@@ -1254,6 +1271,58 @@ QSlider::handle:horizontal {{
         self.visualizer_dock.setVisible(visible)
         if hasattr(self, 'visualizer_action') and self.visualizer_action is not None:
             self.visualizer_action.setChecked(self.visualizer_dock.isVisible())
+
+    def _on_video_mode_changed(self, enabled: bool):
+        """Toggle video mode UI: create VideoWidget lazily and show/hide dock."""
+        try:
+            if enabled:
+                if VideoWidget is None:
+                    logging.warning("VideoWidget not available; cannot enable video mode")
+                    return
+                if self.video_dock is None:
+                    try:
+                        vw = VideoWidget(parent=self)
+                        if vw is not None:
+                            try:
+                                vw.closed.connect(lambda: self._hide_video_dock())
+                            except Exception:
+                                pass
+                        vd = QDockWidget("Video Player", self)
+                        vd.setWidget(vw)
+                        vd.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+                        vd.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+                        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, vd)
+                        self.video_widget = vw
+                        self.video_dock = vd
+                    except Exception:
+                        logging.exception("Failed to create video dock")
+                        return
+                try:
+                    self.video_dock.show()
+                    self.video_dock.raise_()
+                except Exception:
+                    pass
+            else:
+                self._hide_video_dock()
+        except Exception:
+            logging.exception("Error toggling video mode")
+
+    def _hide_video_dock(self):
+        try:
+            vd = getattr(self, 'video_dock', None)
+            if vd is not None:
+                try:
+                    vd.hide()
+                except Exception:
+                    pass
+            vt = getattr(self, 'video_mode_toggle', None)
+            if vt is not None:
+                try:
+                    vt.setChecked(False)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def set_lyrics_visible(self, visible: bool):
         if visible:
