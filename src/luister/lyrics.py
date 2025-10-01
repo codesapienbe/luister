@@ -184,5 +184,16 @@ class LyricsWidget(QWidget):
         self.progress_bar.hide()
 
     def closeEvent(self, event):
-        self.closed.emit()
-        super().closeEvent(event)
+        try:
+            self.closed.emit()
+        except Exception:
+            pass
+        # Prevent destruction; minimize/hide instead so widget can be reopened quickly
+        try:
+            event.ignore()
+        except Exception:
+            pass
+        try:
+            self.hide()
+        except Exception:
+            pass

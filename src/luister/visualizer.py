@@ -384,8 +384,19 @@ class VisualizerWidget(QWidget):
             self._rotation_timer.start(30) 
 
     def closeEvent(self, event):
-        self.closed.emit()
-        super().closeEvent(event) 
+        try:
+            self.closed.emit()
+        except Exception:
+            pass
+        # Prevent full close; just hide/minimize so it can be reopened quickly
+        try:
+            event.ignore()
+        except Exception:
+            pass
+        try:
+            self.hide()
+        except Exception:
+            pass
 
     def _on_analysis_done(self, magnitudes, times):
         """Slot invoked from analyzer thread when analysis finishes."""

@@ -202,7 +202,7 @@ except Exception:
 
 
 LOG_FILENAME = "application.log"
-DEFAULT_REPO = ""  # no default repository; pass --repo when invoking installer
+DEFAULT_REPO = "https://github.com/codesapienbe/luister"  # no default repository; pass --repo when invoking installer
 
 
 # If PyQt5 is not available at development time, avoid defining Qt-based classes

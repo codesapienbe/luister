@@ -54,6 +54,9 @@ dev = [
 
 [project.scripts]
 luister = "luister:main"
+luister-installer = "luister.installer_gui:main"
+luister-updater = "luister.updater:main"
+luister-uninstaller = "luister.uninstaller:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

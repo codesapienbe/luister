@@ -79,25 +79,36 @@ class Theme:
         app.setStyleSheet(
             f"""
             /* ----- Base glass container ----- */
-            QWidget {{
+            QMainWindow, QDialog {{
                 background-color: {glass_bg};
+                /* subtle vertical sheen to mimic polished glass */
+                background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.16), stop:0.5 rgba(255,255,255,0.06), stop:1 rgba(255,255,255,0.03));
                 color: palette(window-text);
                 border: 1px solid {border_rgba};
-                border-radius: 12px;
-            }}
-
-            /* Top-level windows */
-            QMainWindow {{
-                background-color: {glass_bg};
-                border: 1px solid {border_rgba};
                 border-radius: 16px;
+                padding: 6px;
             }}
 
-            /* Buttons: subtle etched border and soft highlight on hover */
+            /* Ensure child widgets use the application's base palette to avoid nested rounded borders */
+            QWidget {{
+                background-color: palette(base);
+                color: palette(window-text);
+                border: none;
+                border-radius: 8px;
+            }}
+
+            /* Panels that intentionally want the glass look */
+            QFrame[frameShape="Panel"] {{
+                background-color: {glass_bg};
+                border-radius: 12px;
+                border: 1px solid rgba(255,255,255,0.08);
+            }}
+
+            /* Buttons: softer rounded capsules with inner highlight */
             QPushButton {{
-                background-color: transparent;
+                background-color: rgba(255,255,255,0.02);
                 color: palette(button-text);
-                border: 1px solid {border_rgba};
+                border: 1px solid rgba(255,255,255,0.12);
                 border-radius: 10px;
                 padding: 6px 12px;
             }}
@@ -105,11 +116,11 @@ class Theme:
             QPushButton:pressed {{ background-color: {pressed_bg}; }}
             QPushButton:disabled {{ color: palette(mid); }}
 
-            /* Text inputs & lists: frosted glass surfaces */
+            /* Text inputs & lists: frosted glass surfaces with subtle inner shadow feel */
             QTextEdit, QListWidget, QLineEdit {{
                 background-color: {input_bg};
                 color: palette(text);
-                border: 1px solid {border_rgba};
+                border: 1px solid rgba(0,0,0,0.06);
                 border-radius: 10px;
                 selection-background-color: palette(highlight);
                 selection-color: palette(highlighted-text);

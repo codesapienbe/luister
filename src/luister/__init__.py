@@ -142,7 +142,11 @@ class UI(QMainWindow):
         time_lcd.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         icon_path = base_path.parent / 'img' / 'icon.png'
-        self.setWindowIcon(QIcon(str(icon_path)))
+        if icon_path.exists():
+            try:
+                self.setWindowIcon(QIcon(str(icon_path)))
+            except Exception:
+                pass
 
         # Clear hard-coded styles from Designer so palette/stylesheet can work
         self._clear_inline_styles()
@@ -419,12 +423,18 @@ QSlider::handle:horizontal {{
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
+        
+
         self.visualizer_dock = QDockWidget("Visualizer", self)
         self.visualizer_dock.setWidget(self.visualizer_widget)
         self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
         # dock to left and don't allow floating to avoid overlap
         self.visualizer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        try:
+            self._make_dock_hide_on_close(self.visualizer_dock)
+        except Exception:
+            pass
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
         
         # Lyrics dock
@@ -451,6 +461,10 @@ QSlider::handle:horizontal {{
         self.lyrics_dock.visibilityChanged.connect(lambda visible: self.set_lyrics_visible(visible))
         # dock to right and prevent floating
         self.lyrics_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        try:
+            self._make_dock_hide_on_close(self.lyrics_dock)
+        except Exception:
+            pass
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.lyrics_dock)
         self._apply_dock_styles()
         # Apply persisted GUI state (visualizer/lyrics visibility) so docks are visible at startup
@@ -517,6 +531,10 @@ QSlider::handle:horizontal {{
                     self.playlist_dock.setWidget(self.ui)
                     self.playlist_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
                     self.playlist_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+                    try:
+                        self._make_dock_hide_on_close(self.playlist_dock)
+                    except Exception:
+                        pass
                     # add playlist right of visualizer by default
                     self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.playlist_dock)
                 # ensure minimum size so it remains visible
@@ -1232,6 +1250,26 @@ QSlider::handle:horizontal {{
             if isinstance(w, QWidget) and w.styleSheet():  # type: ignore[arg-type]
                 w.setStyleSheet("")
             stack.extend(list(w.findChildren(QWidget)))  # type: ignore[arg-type]
+
+    def _make_dock_hide_on_close(self, dock):
+        """Ensure a QDockWidget hides instead of closing when its titlebar X is clicked.
+
+        This assigns a small closeEvent override on the provided dock that ignores the
+        close event and hides the dock. Kept lightweight and tolerant of failures.
+        """
+        try:
+            def _dock_close(ev, d=dock):
+                try:
+                    ev.ignore()
+                except Exception:
+                    pass
+                try:
+                    d.hide()
+                except Exception:
+                    pass
+            dock.closeEvent = _dock_close
+        except Exception:
+            pass
 
     def _ensure_visualizer(self):
         """Lazily create the visualizer widget and dock if missing."""
