@@ -47,7 +47,7 @@ from luister.vectors import (
 from luister.visualizer import VisualizerWidget
 from luister.lyrics import LyricsWidget  # type: ignore
 import logging
-from typing import Optional
+from typing import Optional, Dict
 from luister.manager import get_manager
 import json
 
@@ -388,6 +388,34 @@ QSlider::handle:horizontal {{
                 self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
             except Exception:
                 pass
+            # Wire visualizer analysis status to UI: show "Visualizer: loading" while analysis runs
+            if isinstance(self.visualizer_widget, VisualizerWidget):
+                    saved_title: Dict[str, Optional[str]] = {"val": None}
+
+                    def _on_vis_analysis_started():
+                        try:
+                            # cache current title and show loading indicator
+                            saved_title["val"] = self.title_lcd.toPlainText()
+                            self.title_lcd.setPlainText('Visualizer: loading')
+                        except Exception:
+                            pass
+
+                    def _on_vis_analysis_ready(ok: bool):
+                        try:
+                            if ok:
+                                # restore previous title if available
+                                prev = saved_title.get("val")
+                                if prev is not None:
+                                    self.title_lcd.setPlainText(prev)
+                                else:
+                                    self.title_lcd.setPlainText('Visualizer ready')
+                            else:
+                                self.title_lcd.setPlainText('Visualizer failed')
+                        except Exception:
+                            pass
+
+                    self.visualizer_widget.analysis_started.connect(_on_vis_analysis_started)
+                    self.visualizer_widget.analysis_ready.connect(_on_vis_analysis_ready)
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
@@ -398,6 +426,7 @@ QSlider::handle:horizontal {{
         # dock to left and don't allow floating to avoid overlap
         self.visualizer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
+        
         # Lyrics dock
         try:
             self.lyrics_widget = LyricsWidget()  # type: ignore
@@ -717,8 +746,20 @@ QSlider::handle:horizontal {{
                 except Exception:
                     pass
                 self._ensure_playlist()
-                if not self.ui.isVisible():
-                    self.ui.show()
+                # Prefer showing the docked playlist if it exists to avoid creating
+                # or raising a separate floating Playlist window.
+                try:
+                    if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                        self.playlist_dock.show()
+                        self.playlist_dock.raise_()
+                        self._stack_playlist_below()
+                    else:
+                        # Fallback for older flows where ui may be a standalone PlaylistUI
+                        if isinstance(self.ui, PlaylistUI) and not self.ui.isVisible():
+                            self.ui.show()
+                except Exception:
+                    # Best-effort only; do not fail the add-files flow
+                    pass
                 self._add_files(files, replace=True)
             else:
                 self.title_lcd.setPlainText('No audio files selected')
@@ -876,19 +917,20 @@ QSlider::handle:horizontal {{
     # ------- Playlist docking/toggle ---------
 
     def _ensure_playlist(self):
-        # Main playlist UI
+        # Main playlist UI - reuse existing PlaylistUI instance if present
         try:
-            self.ui = PlaylistUI(main_window=self)
-            self.ui.filesDropped.connect(self._add_files)
-            self.ui.list_songs.itemDoubleClicked.connect(self.clicked_song)  # type: ignore[arg-type]
+            if not hasattr(self, 'ui') or not isinstance(self.ui, PlaylistUI):
+                self.ui = PlaylistUI(main_window=self)
+                self.ui.filesDropped.connect(self._add_files)
+                self.ui.list_songs.itemDoubleClicked.connect(self.clicked_song)  # type: ignore[arg-type]
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.ui = QLabel(f"Playlist failed to initialize: {e}")
         # populate once
         if isinstance(self.ui, PlaylistUI):
             self.ui.list_songs.clear()
-        for i, url in enumerate(self.playlist_urls, 1):
-            self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
+            for i, url in enumerate(self.playlist_urls, 1):
+                self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
 
         # highlight currently playing song
         self._update_playlist_selection()
@@ -1005,7 +1047,7 @@ QSlider::handle:horizontal {{
         if replace:
             # clear previous state
             self.playlist_urls.clear()
-            if hasattr(self, 'ui'):
+            if isinstance(self.ui, PlaylistUI):
                 self.ui.list_songs.clear()
             self.current_index = -1
 
@@ -1013,7 +1055,7 @@ QSlider::handle:horizontal {{
         for idx, fp in enumerate(file_paths, start=start_index):
             url = QUrl.fromLocalFile(fp)
             self.playlist_urls.append(url)
-            if hasattr(self, 'ui'):
+            if isinstance(self.ui, PlaylistUI):
                 self.ui.list_songs.addItem(f"{idx}. {Path(fp).name}")
         self.set_Enabled_button()
         if self.current_index == -1 and self.playlist_urls:
@@ -1252,8 +1294,9 @@ QSlider::handle:horizontal {{
 
     def set_visualizer_visible(self, visible: bool):
         self.visualizer_dock.setVisible(visible)
-        if hasattr(self, 'visualizer_action') and self.visualizer_action is not None:
-            self.visualizer_action.setChecked(self.visualizer_dock.isVisible())
+        vis_act = getattr(self, 'visualizer_action', None)
+        if vis_act is not None:
+            vis_act.setChecked(self.visualizer_dock.isVisible())
 
     def set_lyrics_visible(self, visible: bool):
         if visible:
@@ -1274,8 +1317,9 @@ QSlider::handle:horizontal {{
             self._fade_dock(self.lyrics_dock, fade_in=True)
         else:
             self._fade_dock(self.lyrics_dock, fade_in=False)
-        if hasattr(self, 'lyrics_action') and self.lyrics_action is not None:
-            self.lyrics_action.setChecked(self.lyrics_dock.isVisible())
+        lyr_act = getattr(self, 'lyrics_action', None)
+        if lyr_act is not None:
+            lyr_act.setChecked(self.lyrics_dock.isVisible())
         # No view menu/actions required when all widgets are always visible
 
     def _apply_dock_styles(self):

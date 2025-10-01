@@ -16,14 +16,102 @@ try:
 except ImportError:
     librosa = None
 
+import logging
+
 import math
 import random
-from PyQt6.QtCore import QRect, Qt, QPointF, QTimer, pyqtSignal
+from PyQt6.QtCore import QRect, Qt, QPointF, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
+
+class _AnalyzerThread(QThread):
+    """Background thread that performs audio analysis (prefers librosa).
+
+    Emits (magnitudes, times) via the analysis_finished signal on completion. Both
+    values may be None on failure.
+    """
+    analysis_finished = pyqtSignal(object, object)
+
+    def __init__(self, file_path: str, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+
+    def run(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            # Prefer librosa analysis when available (best results)
+            if librosa is not None:
+                y, sr = librosa.load(self.file_path, mono=True, sr=None)
+                # honour interruption request after load
+                if self.isInterruptionRequested():
+                    return
+                hop_length = 1024
+                stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
+                bands = 16
+                bands_data = np.array_split(stft, bands, axis=0)
+                mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
+                mag_db = librosa.amplitude_to_db(mag_per_band, ref=np.max)
+                mag_db = np.clip((mag_db + 80) / 80, 0, 1)
+                magnitudes = mag_db.T
+                times = librosa.frames_to_time(np.arange(magnitudes.shape[0]), sr=sr, hop_length=hop_length)
+                self.analysis_finished.emit(magnitudes, times)
+                return
+
+            # Fallback: soundfile + numpy FFT
+            import soundfile as sf  # type: ignore
+            data, sr = sf.read(self.file_path)
+            if getattr(data, 'ndim', 1) > 1:
+                data = np.mean(data, axis=1)
+            hop_length = 1024
+            n_fft = 2048
+            frames = []
+            hann = np.hanning(n_fft)
+            for start in range(0, max(1, len(data) - n_fft), hop_length):
+                # allow cooperative interruption
+                if self.isInterruptionRequested():
+                    return
+                frame = data[start:start + n_fft]
+                if len(frame) < n_fft:
+                    frame = np.pad(frame, (0, n_fft - len(frame)))
+                frame = frame * hann
+                spec = np.abs(np.fft.rfft(frame, n=n_fft))
+                frames.append(spec)
+            if not frames:
+                raise RuntimeError("no frames extracted for analysis")
+            stft = np.array(frames).T
+            bands = 16
+            bands_data = np.array_split(stft, bands, axis=0)
+            mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
+            mag_db = 20 * np.log10(np.maximum(mag_per_band, 1e-10))
+            mag_db = np.clip((mag_db + 80) / 80, 0, 1)
+            magnitudes = mag_db.T
+            times = np.arange(magnitudes.shape[0]) * (hop_length / float(sr))
+            self.analysis_finished.emit(magnitudes, times)
+            return
+        except Exception as exc:
+            logger.exception("Visualizer analysis failed for %s: %s", self.file_path, exc)
+
+        # Last-resort placeholder so widget is not blank
+        try:
+            fps = 30
+            duration_sec = 5
+            num_frames = int(duration_sec * fps)
+            bands = 16
+            rng = np.random.RandomState(seed=42)
+            magnitudes = rng.rand(num_frames, bands) * 0.35
+            times = np.linspace(0, duration_sec, num_frames)
+            self.analysis_finished.emit(magnitudes, times)
+        except Exception as exc:
+            logger.exception("Visualizer placeholder generation failed: %s", exc)
+            self.analysis_finished.emit(None, None)
+
+
 class VisualizerWidget(QWidget):
     closed = pyqtSignal()
+    analysis_started = pyqtSignal()
+    analysis_ready = pyqtSignal(bool)
     """Simple bar visualizer driven by the current audio playback."""
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -47,33 +135,59 @@ class VisualizerWidget(QWidget):
         self._rot_speeds: dict[tuple, float] = {}
         self._rotation_timer = QTimer(self)
         self._rotation_timer.timeout.connect(self._increment_rotation)
-        self._rotation_timer.start(30)  # ~33 FPS
+        # do NOT start the rotation timer automatically; only resume when analysis is ready
+        # self._rotation_timer.start(30)  # ~33 FPS
         # random color palette cache
         self._color_cache = [self._random_color() for _ in range(256)]
+        # analysis timeout (ms) and timer to cancel long-running analysis
+        self._analysis_timeout_ms = 10000
+        self._analysis_timeout_timer = QTimer(self)
+        self._analysis_timeout_timer.setSingleShot(True)
+        self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
+        self._analyzer_thread: Optional[_AnalyzerThread] = None
 
     def set_audio(self, file_path: str):
-        """Load file_path with librosa and pre-compute magnitude per band."""
-        if librosa is None:
-            self._magnitudes = None
-            self._times = None
-            return
+        """Start background analysis for file_path and enable visualization when ready.
+
+        Analysis is performed in a background thread to avoid blocking the UI. The
+        visualizer's animation is paused until the analysis thread emits results.
+        """
+        logger = logging.getLogger(__name__)
+
+        # Cancel any running analyzer thread (best effort)
         try:
-            y, sr = librosa.load(file_path, mono=True, sr=None)
-            hop_length = 1024
-            stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
-            bands = 16
-            # split frequency bins into bands and average each band
-            bands_data = np.array_split(stft, bands, axis=0)
-            mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
-            mag_db = librosa.amplitude_to_db(mag_per_band, ref=np.max)
-            mag_db = np.clip((mag_db + 80) / 80, 0, 1)
-            magnitudes = mag_db.T
-            self._magnitudes = magnitudes
-            self._times = librosa.frames_to_time(
-                np.arange(magnitudes.shape[0]), sr=sr, hop_length=hop_length)
+            if getattr(self, '_analyzer_thread', None) is not None:
+                try:
+                    if self._analyzer_thread.isRunning():
+                        # request interruption and give it a short grace period
+                        self._analyzer_thread.requestInterruption()
+                        self._analyzer_thread.wait(50)
+                except Exception:
+                    pass
         except Exception:
-            self._magnitudes = None
-            self._times = None
+            pass
+
+        # Pause animation until new data available
+        self.pause_animation()
+        self._magnitudes = None
+        self._times = None
+        self._current_index = 0
+
+        # Notify UI that analysis has started and arm the timeout
+        try:
+            self.analysis_started.emit()
+        except Exception:
+            pass
+
+        # Start background analyzer thread which prefers librosa when available
+        self._analyzer_thread = _AnalyzerThread(file_path)
+        self._analyzer_thread.analysis_finished.connect(self._on_analysis_done)
+        self._analyzer_thread.start()
+        # start timeout watchdog
+        try:
+            self._analysis_timeout_timer.start(self._analysis_timeout_ms)
+        except Exception:
+            pass
 
     def update_position(self, ms: int):
         """Called with current playback position in milliseconds."""
@@ -272,3 +386,64 @@ class VisualizerWidget(QWidget):
     def closeEvent(self, event):
         self.closed.emit()
         super().closeEvent(event) 
+
+    def _on_analysis_done(self, magnitudes, times):
+        """Slot invoked from analyzer thread when analysis finishes."""
+        try:
+            # stop timeout watchdog
+            try:
+                if self._analysis_timeout_timer.isActive():
+                    self._analysis_timeout_timer.stop()
+            except Exception:
+                pass
+
+            if magnitudes is None or times is None:
+                # keep magnitudes None to indicate not ready
+                self._magnitudes = None
+                self._times = None
+                try:
+                    self.analysis_ready.emit(False)
+                except Exception:
+                    pass
+                return
+            self._magnitudes = magnitudes
+            self._times = times
+            # Start animation and ask for an immediate repaint
+            self.resume_animation()
+            self.update()
+            try:
+                self.analysis_ready.emit(True)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_analysis_timeout(self):
+        """Called when analysis exceeds allowed duration; attempt to cancel thread."""
+        try:
+            if getattr(self, '_analyzer_thread', None) is None:
+                return
+            thr = self._analyzer_thread
+            # Cooperative interruption request
+            try:
+                thr.requestInterruption()
+            except Exception:
+                pass
+            # wait briefly
+            try:
+                thr.wait(200)
+            except Exception:
+                pass
+            # if still running, force-terminate as last resort
+            if thr.isRunning():
+                try:
+                    thr.terminate()
+                except Exception:
+                    pass
+            # inform UI that analysis failed due to timeout
+            try:
+                self.analysis_ready.emit(False)
+            except Exception:
+                pass
+        except Exception:
+            pass 
