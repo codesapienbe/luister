@@ -10,7 +10,7 @@ authors = [
     {name = "Yilmaz Mustafa", email = "ymus@tuta.io"}
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
