@@ -1,9 +1,7 @@
 """Real-time audio visualizer for Luister.
 
-Uses numpy and librosa to analyze the current audio file into magnitude bands,
-then draws a bar visualization that advances with playback time.
-
-If librosa is unavailable, the widget shows nothing but does not break the app.
+Winamp-style spectrum analyzer with reactive bars.
+Uses numpy and librosa to analyze the current audio file.
 """
 
 from __future__ import annotations
@@ -18,19 +16,13 @@ except ImportError:
 
 import logging
 
-import math
-import random
-from PyQt6.QtCore import QRect, Qt, QPointF, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtGui import QColor, QPainter, QLinearGradient
 from PyQt6.QtWidgets import QWidget
 
 
 class _AnalyzerThread(QThread):
-    """Background thread that performs audio analysis (prefers librosa).
-
-    Emits (magnitudes, times) via the analysis_finished signal on completion. Both
-    values may be None on failure.
-    """
+    """Background thread that performs audio analysis."""
     analysis_finished = pyqtSignal(object, object)
 
     def __init__(self, file_path: str, parent=None):
@@ -38,23 +30,35 @@ class _AnalyzerThread(QThread):
         self.file_path = file_path
 
     def run(self):
-        import logging
         logger = logging.getLogger(__name__)
         try:
-            # Prefer librosa analysis when available (best results)
             if librosa is not None:
-                y, sr = librosa.load(self.file_path, mono=True, sr=None)
-                # honour interruption request after load
+                y, sr = librosa.load(self.file_path, mono=True, sr=22050)
                 if self.isInterruptionRequested():
                     return
-                hop_length = 1024
+                hop_length = 512
                 stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
-                bands = 16
-                bands_data = np.array_split(stft, bands, axis=0)
-                mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
+                # Use 32 frequency bands for Winamp-like display
+                bands = 32
+                freq_bins = stft.shape[0]
+                # Logarithmic frequency binning (more bins for lower frequencies)
+                bin_edges = np.logspace(0, np.log10(freq_bins), bands + 1).astype(int)
+                bin_edges = np.clip(bin_edges, 0, freq_bins)
+
+                mag_per_band = []
+                for i in range(bands):
+                    start, end = bin_edges[i], bin_edges[i + 1]
+                    if end <= start:
+                        end = start + 1
+                    band_mean = stft[start:end, :].mean(axis=0)
+                    mag_per_band.append(band_mean)
+
+                mag_per_band = np.array(mag_per_band)
+                # Convert to dB and normalize
                 mag_db = librosa.amplitude_to_db(mag_per_band, ref=np.max)
-                mag_db = np.clip((mag_db + 80) / 80, 0, 1)
-                magnitudes = mag_db.T
+                # Normalize to 0-1 range (typical dynamic range is -80 to 0 dB)
+                mag_normalized = np.clip((mag_db + 60) / 60, 0, 1)
+                magnitudes = mag_normalized.T
                 times = librosa.frames_to_time(np.arange(magnitudes.shape[0]), sr=sr, hop_length=hop_length)
                 self.analysis_finished.emit(magnitudes, times)
                 return
@@ -64,12 +68,11 @@ class _AnalyzerThread(QThread):
             data, sr = sf.read(self.file_path)
             if getattr(data, 'ndim', 1) > 1:
                 data = np.mean(data, axis=1)
-            hop_length = 1024
+            hop_length = 512
             n_fft = 2048
             frames = []
             hann = np.hanning(n_fft)
             for start in range(0, max(1, len(data) - n_fft), hop_length):
-                # allow cooperative interruption
                 if self.isInterruptionRequested():
                     return
                 frame = data[start:start + n_fft]
@@ -79,115 +82,97 @@ class _AnalyzerThread(QThread):
                 spec = np.abs(np.fft.rfft(frame, n=n_fft))
                 frames.append(spec)
             if not frames:
-                raise RuntimeError("no frames extracted for analysis")
+                raise RuntimeError("no frames extracted")
             stft = np.array(frames).T
-            bands = 16
-            bands_data = np.array_split(stft, bands, axis=0)
-            mag_per_band = np.stack([band.mean(axis=0) for band in bands_data], axis=0)
+            bands = 32
+            freq_bins = stft.shape[0]
+            bin_edges = np.logspace(0, np.log10(freq_bins), bands + 1).astype(int)
+            bin_edges = np.clip(bin_edges, 0, freq_bins)
+
+            mag_per_band = []
+            for i in range(bands):
+                start_bin, end_bin = bin_edges[i], bin_edges[i + 1]
+                if end_bin <= start_bin:
+                    end_bin = start_bin + 1
+                band_mean = stft[start_bin:end_bin, :].mean(axis=0)
+                mag_per_band.append(band_mean)
+
+            mag_per_band = np.array(mag_per_band)
             mag_db = 20 * np.log10(np.maximum(mag_per_band, 1e-10))
-            mag_db = np.clip((mag_db + 80) / 80, 0, 1)
-            magnitudes = mag_db.T
+            mag_normalized = np.clip((mag_db + 60) / 60, 0, 1)
+            magnitudes = mag_normalized.T
             times = np.arange(magnitudes.shape[0]) * (hop_length / float(sr))
             self.analysis_finished.emit(magnitudes, times)
-            return
         except Exception as exc:
-            logger.exception("Visualizer analysis failed for %s: %s", self.file_path, exc)
-
-        # Last-resort placeholder so widget is not blank
-        try:
-            fps = 30
-            duration_sec = 5
-            num_frames = int(duration_sec * fps)
-            bands = 16
-            rng = np.random.RandomState(seed=42)
-            magnitudes = rng.rand(num_frames, bands) * 0.35
-            times = np.linspace(0, duration_sec, num_frames)
-            self.analysis_finished.emit(magnitudes, times)
-        except Exception as exc:
-            logger.exception("Visualizer placeholder generation failed: %s", exc)
+            logger.exception("Visualizer analysis failed: %s", exc)
             self.analysis_finished.emit(None, None)
 
 
 class VisualizerWidget(QWidget):
+    """Winamp-style spectrum analyzer visualizer."""
     closed = pyqtSignal()
     analysis_started = pyqtSignal()
     analysis_ready = pyqtSignal(bool)
-    """Simple bar visualizer driven by the current audio playback."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setMinimumHeight(80)
+        self.setMinimumHeight(120)
+        self.setMinimumWidth(200)
+
+        # Audio data
         self._magnitudes: Optional[np.ndarray] = None
         self._times: Optional[np.ndarray] = None
         self._current_index: int = 0
-        self._bar_color = QColor("#4caf50")
-        self.setAutoFillBackground(False)
-        # visual styles
-        self._style_index = 0
-        self._num_styles = 5
-        # sensitivity settings to suppress low-level noise
-        self._sensitivity_threshold = 0.2
-        self._sensitivity_exponent = 0.5
-        self._duplication_count = 3  # Number of element copies
-        self._spread_factor = 0.15   # Coordinate spread percentage
-        # per-item rotation bookkeeping
-        self._frame_counter = 0
-        self._rot_speeds: dict[tuple, float] = {}
-        self._rotation_timer = QTimer(self)
-        self._rotation_timer.timeout.connect(self._increment_rotation)
-        # do NOT start the rotation timer automatically; only resume when analysis is ready
-        # self._rotation_timer.start(30)  # ~33 FPS
-        # random color palette cache
-        self._color_cache = [self._random_color() for _ in range(256)]
-        # analysis timeout (ms) and timer to cancel long-running analysis
-        self._analysis_timeout_ms = 10000
+
+        # Peak hold values (fall slowly)
+        self._peaks: Optional[np.ndarray] = None
+        self._peak_hold_frames = 15  # Hold peak for this many frames
+        self._peak_hold_counters: Optional[np.ndarray] = None
+        self._peak_fall_speed = 0.02  # How fast peaks fall
+
+        # Smoothing for bars (prevents jitter)
+        self._smoothed_mags: Optional[np.ndarray] = None
+        self._smooth_factor = 0.3  # 0 = no smoothing, 1 = full smoothing
+
+        # Animation timer
+        self._animation_timer = QTimer(self)
+        self._animation_timer.timeout.connect(self._on_animation_tick)
+
+        # Analysis thread
+        self._analyzer_thread: Optional[_AnalyzerThread] = None
         self._analysis_timeout_timer = QTimer(self)
         self._analysis_timeout_timer.setSingleShot(True)
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
-        self._analyzer_thread: Optional[_AnalyzerThread] = None
+
+        # Visual style (0=bars, 1=mirrored bars, 2=waveform)
+        self._style = 0
+        self._num_styles = 3
+
+        self.setAutoFillBackground(False)
 
     def set_audio(self, file_path: str):
-        """Start background analysis for file_path and enable visualization when ready.
+        """Start background analysis for the audio file."""
+        # Cancel any running analysis
+        if self._analyzer_thread is not None and self._analyzer_thread.isRunning():
+            self._analyzer_thread.requestInterruption()
+            self._analyzer_thread.wait(100)
 
-        Analysis is performed in a background thread to avoid blocking the UI. The
-        visualizer's animation is paused until the analysis thread emits results.
-        """
-        logger = logging.getLogger(__name__)
-
-        # Cancel any running analyzer thread (best effort)
-        try:
-            if getattr(self, '_analyzer_thread', None) is not None:
-                try:
-                    if self._analyzer_thread.isRunning():
-                        # request interruption and give it a short grace period
-                        self._analyzer_thread.requestInterruption()
-                        self._analyzer_thread.wait(50)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Pause animation until new data available
         self.pause_animation()
         self._magnitudes = None
         self._times = None
+        self._peaks = None
+        self._smoothed_mags = None
         self._current_index = 0
 
-        # Notify UI that analysis has started and arm the timeout
         try:
             self.analysis_started.emit()
         except Exception:
             pass
 
-        # Start background analyzer thread which prefers librosa when available
         self._analyzer_thread = _AnalyzerThread(file_path)
         self._analyzer_thread.analysis_finished.connect(self._on_analysis_done)
         self._analyzer_thread.start()
-        # start timeout watchdog
-        try:
-            self._analysis_timeout_timer.start(self._analysis_timeout_ms)
-        except Exception:
-            pass
+        self._analysis_timeout_timer.start(15000)  # 15s timeout
 
     def update_position(self, ms: int):
         """Called with current playback position in milliseconds."""
@@ -195,12 +180,11 @@ class VisualizerWidget(QWidget):
             return
         sec = ms / 1000.0
         idx = np.searchsorted(self._times, sec)
-        self._current_index = max(0, min(idx, len(self._times) - 1))  # type: ignore[arg-type]
-        self.update()
+        self._current_index = max(0, min(idx, len(self._times) - 1))
 
     def mouseDoubleClickEvent(self, event):
         """Cycle visual style on double click."""
-        self._style_index = (self._style_index + 1) % self._num_styles  # type: ignore
+        self._style = (self._style + 1) % self._num_styles
         self.update()
 
     def paintEvent(self, event):
@@ -209,261 +193,184 @@ class VisualizerWidget(QWidget):
         w = self.width()
         h = self.height()
 
-        # Draw dark background for visibility
+        # Dark background
         painter.fillRect(0, 0, w, h, QColor("#0a0a0a"))
 
         if self._magnitudes is None:
-            # Show message when no audio is loaded
-            painter.setPen(QColor("#666666"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No audio loaded")
+            painter.setPen(QColor("#444444"))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Loading...")
             painter.end()
             return
 
-        # get raw magnitude data and apply sensitivity mapping
-        raw_mags = self._magnitudes  # type: ignore
-        # map raw magnitudes to [0,1] after threshold and exponent
-        idx = self._current_index
-        raw = raw_mags[idx]
-        # linear threshold
-        proc = np.clip((raw - self._sensitivity_threshold) / (1.0 - self._sensitivity_threshold), 0.0, 1.0)
-        # non-linear curve
-        mags = proc ** self._sensitivity_exponent
+        if self._smoothed_mags is None:
+            painter.end()
+            return
+
+        mags = self._smoothed_mags
         bands = len(mags)
 
-        # style-based rendering with per-item rotations
-        if self._style_index == 0:
-            # vertical bars with ghosting effect
-            bar_width = w / bands if bands else w
-            for i, magnitude in enumerate(mags):
-                for dup in range(self._duplication_count):
-                    offset = (dup + 1) * w * 0.01
-                    height = int((magnitude ** self._sensitivity_exponent) * h * 0.6 * (0.8 ** dup))
-                    alpha = int(255 * (0.6 ** dup))
-                    color = self._color_cache[(i+dup) % len(self._color_cache)]
-                    color.setAlpha(alpha)
-                    rect_x = int(bar_width * i + offset)
-                    rect_y = h - height
-                    rect_w = int(bar_width * 0.6)
-                    rect_h = height
-                    self._apply_item_rotation(painter, (0,i,dup), rect_x+rect_w/2, rect_y+rect_h/2)
-                    painter.setBrush(color)
-                    painter.drawRect(rect_x, rect_y, rect_w, rect_h)
-                    painter.restore()
-                    # horizontally mirrored duplicate
-                    mirror_x = w - (bar_width * i + offset) - int(bar_width * 0.6)
-                    self._apply_item_rotation(painter, (0,i,dup,'mirror'), mirror_x+rect_w/2, rect_y+rect_h/2)
-                    painter.setBrush(color)
-                    painter.drawRect(int(mirror_x), rect_y, rect_w, rect_h)
-                    painter.restore()
-                    # vertically flipped duplicate (drawn from top)
-                    top_y = 0
-                    self._apply_item_rotation(painter, (0,i,dup,'flip'), rect_x+rect_w/2, top_y+rect_h/2)
-                    painter.setBrush(color)
-                    painter.drawRect(rect_x, top_y, rect_w, rect_h)
-                    painter.restore()
-        elif self._style_index == 1:
-            # filled area with multiple reflection layers
-            for dup in range(1, self._duplication_count + 1):
-                path = QPainterPath()
-                path.moveTo(0, h)
-                y_offset = dup * 10
-                scale_factor = 1 - (dup * 0.1)
-                
-                for i, magnitude in enumerate(mags):
-                    x = int(i * (w / bands))
-                    y = int(h - (magnitude * h * scale_factor) - y_offset)
-                    path.lineTo(x, y)
-                
-                path.lineTo(w, h)
-                col = self._random_color(50 // dup)
-                # rotate path around center
-                self._apply_item_rotation(painter, (1,dup), w/2, h/2)
-                painter.fillPath(path, col)
-                painter.restore()
-                # horizontal mirror of the filled area
-                painter.save()
-                painter.translate(w, 0)
-                painter.scale(-1, 1)
-                painter.fillPath(path, col)
-                painter.restore()
-                # vertical mirror of the filled area
-                painter.save()
-                painter.translate(0, h)
-                painter.scale(1, -1)
-                painter.fillPath(path, col)
-                painter.restore()
-        elif self._style_index == 2:
-            # radial lines with positional offsets and rotational duplication
-            center_base = QPointF(self.rect().center())
-            shifts = [
-                (i - self._duplication_count // 2) * w * self._spread_factor
-                for i in range(self._duplication_count)
-            ]
-            centers = [QPointF(center_base.x() + dx, center_base.y()) for dx in shifts]
-            for c in centers:
-                for i, magnitude in enumerate(mags):
-                    line_length = magnitude * min(w, h) * 0.4
-                    for angle in range(0, 360, 360 // (self._duplication_count + 2)):
-                        rad = math.radians(angle + i * 5)
-                        ang_key = (2,i,angle)
-                        dynamic_angle = math.radians(self._get_angle(ang_key))
-                        end_point = QPointF(
-                            c.x() + line_length * math.cos(rad + dynamic_angle),
-                            c.y() + line_length * math.sin(rad + dynamic_angle)
-                        )
-                        pen = QPen(self._random_color())
-                        painter.setPen(pen)
-                        painter.drawLine(c, end_point)
-        elif self._style_index == 3:
-            # line spectrum with parallel echoes
-            for dup in range(self._duplication_count):
-                y_base = h * (0.2 + 0.1 * dup)
-                path = QPainterPath()
-                path.moveTo(0, y_base)
-                for i, magnitude in enumerate(mags):
-                    x = int(i * (w / bands))
-                    y = y_base - magnitude * h * 0.4
-                    path.lineTo(x, y)
-                    if dup > 0:
-                        path.addEllipse(x, y, 3 + dup*2, 3 + dup*2)
-                self._apply_item_rotation(painter, (3,dup), w/2, y_base)
-                painter.setPen(QPen(self._random_color()))
-                painter.drawPath(path)
-                painter.restore()
-        elif self._style_index == 4:
-            # circles with concentric rings at multiple positions
-            center_base = QPointF(self.rect().center())
-            max_radius = min(w, h) * 0.4
-            shifts = [
-                (i - self._duplication_count // 2) * w * self._spread_factor
-                for i in range(self._duplication_count)
-            ]
-            centers = [QPointF(center_base.x() + dx, center_base.y()) for dx in shifts]
-            for c in centers:
-                for i, magnitude in enumerate(mags):
-                    for dup in range(self._duplication_count):
-                        radius = (
-                            max_radius
-                            * (i / bands)
-                            * (1 + 0.1 * dup)
-                            * magnitude
-                        )
-                        alpha = int(255 * (0.7 ** dup))
-                        col = self._random_color(alpha // 2)
-                        self._apply_item_rotation(painter, (4,i,dup), c.x(), c.y())
-                        painter.setBrush(col)
-                        painter.drawEllipse(c, radius, radius)
-                        painter.restore()
+        if self._style == 0:
+            # Classic Winamp bars
+            self._draw_bars(painter, mags, w, h, mirrored=False)
+        elif self._style == 1:
+            # Mirrored bars (top and bottom)
+            self._draw_bars(painter, mags, w, h, mirrored=True)
+        elif self._style == 2:
+            # Oscilloscope-style waveform
+            self._draw_waveform(painter, mags, w, h)
+
         painter.end()
 
-    def _increment_rotation(self):
-        self._frame_counter += 1
+    def _draw_bars(self, painter: QPainter, mags: np.ndarray, w: int, h: int, mirrored: bool = False):
+        """Draw Winamp-style spectrum bars."""
+        bands = len(mags)
+        bar_width = max(4, (w - bands * 2) // bands)
+        gap = 2
+        total_width = bands * (bar_width + gap)
+        start_x = (w - total_width) // 2
+
+        draw_height = h if not mirrored else h // 2
+
+        for i, mag in enumerate(mags):
+            x = start_x + i * (bar_width + gap)
+            bar_height = int(mag * draw_height * 0.9)
+
+            if bar_height < 2:
+                bar_height = 2
+
+            # Create gradient for bar (green at bottom, yellow middle, red at top)
+            if mirrored:
+                y = draw_height - bar_height
+                gradient = QLinearGradient(x, draw_height, x, y)
+            else:
+                y = h - bar_height
+                gradient = QLinearGradient(x, h, x, y)
+
+            gradient.setColorAt(0.0, QColor("#00ff00"))  # Green at bottom
+            gradient.setColorAt(0.5, QColor("#ffff00"))  # Yellow in middle
+            gradient.setColorAt(0.8, QColor("#ff8800"))  # Orange
+            gradient.setColorAt(1.0, QColor("#ff0000"))  # Red at top
+
+            painter.fillRect(x, y, bar_width, bar_height, gradient)
+
+            # Draw peak indicator
+            if self._peaks is not None and i < len(self._peaks):
+                peak_height = int(self._peaks[i] * draw_height * 0.9)
+                if peak_height > bar_height:
+                    peak_y = draw_height - peak_height if mirrored else h - peak_height
+                    painter.fillRect(x, peak_y, bar_width, 3, QColor("#ffffff"))
+
+            # Draw mirrored bars (top half)
+            if mirrored:
+                mirror_y = draw_height
+                gradient_mirror = QLinearGradient(x, mirror_y, x, mirror_y + bar_height)
+                gradient_mirror.setColorAt(0.0, QColor("#00ff00"))
+                gradient_mirror.setColorAt(0.5, QColor("#ffff00"))
+                gradient_mirror.setColorAt(0.8, QColor("#ff8800"))
+                gradient_mirror.setColorAt(1.0, QColor("#ff0000"))
+                painter.fillRect(x, mirror_y, bar_width, bar_height, gradient_mirror)
+
+    def _draw_waveform(self, painter: QPainter, mags: np.ndarray, w: int, h: int):
+        """Draw oscilloscope-style waveform."""
+        bands = len(mags)
+        center_y = h // 2
+
+        painter.setPen(QColor("#00ff00"))
+
+        prev_x, prev_y = 0, center_y
+        for i, mag in enumerate(mags):
+            x = int(i * w / bands)
+            # Oscillate above and below center based on band index
+            direction = 1 if i % 2 == 0 else -1
+            y = center_y + int(direction * mag * h * 0.4)
+            painter.drawLine(prev_x, prev_y, x, y)
+            prev_x, prev_y = x, y
+
+    def _on_animation_tick(self):
+        """Update smoothed values and peaks on each animation frame."""
+        if self._magnitudes is None:
+            return
+
+        # Get current raw magnitudes
+        raw_mags = self._magnitudes[self._current_index]
+        bands = len(raw_mags)
+
+        # Initialize smoothed mags if needed
+        if self._smoothed_mags is None or len(self._smoothed_mags) != bands:
+            self._smoothed_mags = np.zeros(bands)
+            self._peaks = np.zeros(bands)
+            self._peak_hold_counters = np.zeros(bands)
+
+        # Apply smoothing (exponential moving average)
+        self._smoothed_mags = self._smooth_factor * self._smoothed_mags + (1 - self._smooth_factor) * raw_mags
+
+        # Update peaks
+        for i in range(bands):
+            if self._smoothed_mags[i] >= self._peaks[i]:
+                # New peak
+                self._peaks[i] = self._smoothed_mags[i]
+                self._peak_hold_counters[i] = self._peak_hold_frames
+            else:
+                # Peak hold or fall
+                if self._peak_hold_counters[i] > 0:
+                    self._peak_hold_counters[i] -= 1
+                else:
+                    self._peaks[i] = max(0, self._peaks[i] - self._peak_fall_speed)
+
         self.update()
 
-    def _get_angle(self, key: tuple) -> float:
-        """Return current rotation angle for a given visual element key."""
-        if key not in self._rot_speeds:
-            # random speed between -3 and 3 deg per frame, excluding very slow
-            speed = 0.0
-            while abs(speed) < 0.2:
-                speed = random.uniform(-3.0, 3.0)
-            self._rot_speeds[key] = speed
-        return (self._rot_speeds[key] * self._frame_counter) % 360
+    def _on_analysis_done(self, magnitudes, times):
+        """Called when audio analysis completes."""
+        self._analysis_timeout_timer.stop()
 
-    def _apply_item_rotation(self, painter: QPainter, key: tuple, cx: float, cy: float):
-        angle = self._get_angle(key)
-        painter.save()
-        painter.translate(cx, cy)
-        painter.rotate(angle)
-        painter.translate(-cx, -cy)
+        if magnitudes is None or times is None:
+            try:
+                self.analysis_ready.emit(False)
+            except Exception:
+                pass
+            return
 
-    def _random_color(self, alpha: int = 255) -> QColor:
-        """Return a bright random color."""
-        hue = random.randint(0, 359)
-        return QColor.fromHsv(hue, 255, 255, alpha)
+        self._magnitudes = magnitudes
+        self._times = times
+        bands = magnitudes.shape[1] if magnitudes.ndim > 1 else 32
+        self._peaks = np.zeros(bands)
+        self._peak_hold_counters = np.zeros(bands)
+        self._smoothed_mags = np.zeros(bands)
+
+        self.resume_animation()
+        self.update()
+
+        try:
+            self.analysis_ready.emit(True)
+        except Exception:
+            pass
+
+    def _on_analysis_timeout(self):
+        """Handle analysis timeout."""
+        if self._analyzer_thread is not None and self._analyzer_thread.isRunning():
+            self._analyzer_thread.requestInterruption()
+            self._analyzer_thread.wait(200)
+            if self._analyzer_thread.isRunning():
+                self._analyzer_thread.terminate()
+        try:
+            self.analysis_ready.emit(False)
+        except Exception:
+            pass
 
     def pause_animation(self):
-        """Stop internal rotation timer for idle state."""
-        if self._rotation_timer.isActive():
-            self._rotation_timer.stop()
+        """Stop animation timer."""
+        if self._animation_timer.isActive():
+            self._animation_timer.stop()
 
     def resume_animation(self):
-        """Restart rotation timer when playback resumes."""
-        if not self._rotation_timer.isActive():
-            self._rotation_timer.start(30) 
+        """Start animation timer."""
+        if not self._animation_timer.isActive():
+            self._animation_timer.start(33)  # ~30 FPS
 
     def closeEvent(self, event):
         try:
             self.closed.emit()
         except Exception:
             pass
-        # Prevent full close; just hide/minimize so it can be reopened quickly
-        try:
-            event.ignore()
-        except Exception:
-            pass
-        try:
-            self.hide()
-        except Exception:
-            pass
-
-    def _on_analysis_done(self, magnitudes, times):
-        """Slot invoked from analyzer thread when analysis finishes."""
-        try:
-            # stop timeout watchdog
-            try:
-                if self._analysis_timeout_timer.isActive():
-                    self._analysis_timeout_timer.stop()
-            except Exception:
-                pass
-
-            if magnitudes is None or times is None:
-                # keep magnitudes None to indicate not ready
-                self._magnitudes = None
-                self._times = None
-                try:
-                    self.analysis_ready.emit(False)
-                except Exception:
-                    pass
-                return
-            self._magnitudes = magnitudes
-            self._times = times
-            # Start animation and ask for an immediate repaint
-            self.resume_animation()
-            self.update()
-            try:
-                self.analysis_ready.emit(True)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    def _on_analysis_timeout(self):
-        """Called when analysis exceeds allowed duration; attempt to cancel thread."""
-        try:
-            if getattr(self, '_analyzer_thread', None) is None:
-                return
-            thr = self._analyzer_thread
-            # Cooperative interruption request
-            try:
-                thr.requestInterruption()
-            except Exception:
-                pass
-            # wait briefly
-            try:
-                thr.wait(200)
-            except Exception:
-                pass
-            # if still running, force-terminate as last resort
-            if thr.isRunning():
-                try:
-                    thr.terminate()
-                except Exception:
-                    pass
-            # inform UI that analysis failed due to timeout
-            try:
-                self.analysis_ready.emit(False)
-            except Exception:
-                pass
-        except Exception:
-            pass 
+        event.ignore()
+        self.hide()

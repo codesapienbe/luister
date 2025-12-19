@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QPushButton
 
 _ICON_SIZE = QSize(32, 32)
 _ALPHA = int(255 * 0.95)  # 5 % transparent
-_COLOR = QColor(76, 175, 80, _ALPHA)  # default greenish  # noqa: A001
+_COLOR = QColor(0, 122, 255, _ALPHA)  # Apple blue for cohesive look  # noqa: A001
 
 
 def _make_icon(path: QPainterPath, color: QColor | None = None) -> QIcon:

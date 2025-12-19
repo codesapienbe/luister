@@ -1,6 +1,6 @@
 """Theme configuration for Luister.
 
-Provides light and dark QPalette instances and helper to apply them.
+Apple-inspired Crystal Glass design with beautiful glassmorphic effects.
 """
 from __future__ import annotations
 
@@ -14,128 +14,502 @@ class Theme:
     @staticmethod
     def light() -> QPalette:
         pal = QPalette()
-        # Crystal glass inspired light palette: cool neutrals with soft cyan highlights
-        pal.setColor(QPalette.ColorRole.Window, QColor("#F6F8FA"))
-        pal.setColor(QPalette.ColorRole.WindowText, QColor("#0F2933"))
+        # Apple-inspired light palette
+        pal.setColor(QPalette.ColorRole.Window, QColor("#F5F5F7"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#1D1D1F"))
         pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#F2F6F8"))
-        pal.setColor(QPalette.ColorRole.Text, QColor("#0F2933"))
-        pal.setColor(QPalette.ColorRole.Button, QColor("#F8FBFC"))
-        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#0F2933"))
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#5AC8FA"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#F5F5F7"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#1D1D1F"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#1D1D1F"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#007AFF"))
         pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.Mid, QColor("#86868B"))
+        pal.setColor(QPalette.ColorRole.Dark, QColor("#6E6E73"))
+        pal.setColor(QPalette.ColorRole.Light, QColor("#FFFFFF"))
         return pal
 
     @staticmethod
     def dark() -> QPalette:
         pal = QPalette()
-        # Crystal glass inspired dark palette: translucent dark surfaces with cool cyan accent
-        pal.setColor(QPalette.ColorRole.Window, QColor("#111417"))
-        pal.setColor(QPalette.ColorRole.WindowText, QColor("#E8F6F9"))
-        pal.setColor(QPalette.ColorRole.Base, QColor("#0F1214"))
-        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#151819"))
-        pal.setColor(QPalette.ColorRole.Text, QColor("#E8F6F9"))
-        pal.setColor(QPalette.ColorRole.Button, QColor("#121416"))
-        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#E8F6F9"))
-        pal.setColor(QPalette.ColorRole.Highlight, QColor("#39BEE6"))
-        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#0F2933"))
+        # Apple-inspired dark palette
+        pal.setColor(QPalette.ColorRole.Window, QColor("#1C1C1E"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#F5F5F7"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#2C2C2E"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#3A3A3C"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#F5F5F7"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#3A3A3C"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#F5F5F7"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#0A84FF"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.Mid, QColor("#636366"))
+        pal.setColor(QPalette.ColorRole.Dark, QColor("#48484A"))
+        pal.setColor(QPalette.ColorRole.Light, QColor("#636366"))
         return pal
 
     @staticmethod
     def apply(app, theme: str) -> None:  # type: ignore
-        """Apply a theme ('light' or 'dark') to QApplication.
+        """Apply a theme ('light' or 'dark') to QApplication."""
 
-        Qt widgets honour QPalette reliably when using the *Fusion* style.
-        Native platform styles (macOS, Windows, etc.) often ignore custom
-        palette roles for widgets like buttons, text edits, etc.  We therefore
-        switch the application style to "Fusion" the first time this helper is
-        called, then apply the palette.
-        """
-
-        # Switch to Fusion style once so palettes are respected cross-platform
         if app.style().objectName() != "fusion":
-            app.setStyle("Fusion")          # ensure widgets honour QPalette
+            app.setStyle("Fusion")
 
         palette = Theme.light() if theme == "light" else Theme.dark()
         app.setPalette(palette)
 
-        # --- Glassmorphic style sheet -------------------------------------------------
-        # Tuned glass variables for a Crystal Glass look
+        # Crystal Glass stylesheet - Apple-inspired glassmorphism
         if theme == "light":
-            glass_bg = "#1AFFFFFF"  # subtle translucent white (~10%)
-            hover_bg = "#26FFFFFF"  # ~15%
-            pressed_bg = "#33FFFFFF"  # ~20%
-            border_rgba = "rgba(255,255,255,0.22)"
-            groove_bg = "rgba(15,41,51,0.06)"
-            input_bg = "#28FFFFFF"  # ~16%
+            # Light mode colors
+            bg_primary = "#FFFFFF"
+            bg_secondary = "#F5F5F7"
+            glass_bg = "rgba(255, 255, 255, 0.78)"
+            glass_border = "rgba(255, 255, 255, 0.5)"
+            glass_shadow = "rgba(0, 0, 0, 0.04)"
+            text_primary = "#1D1D1F"
+            text_secondary = "#86868B"
+            accent = "#007AFF"
+            accent_hover = "#0066CC"
+            accent_pressed = "#004999"
+            btn_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.95), stop:1 rgba(245,245,247,0.9))"
+            btn_hover = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,1), stop:1 rgba(240,240,242,0.95))"
+            btn_pressed = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(230,230,232,0.95), stop:1 rgba(220,220,222,0.9))"
+            btn_border = "rgba(0, 0, 0, 0.12)"
+            btn_border_hover = "rgba(0, 122, 255, 0.5)"
+            input_bg = "rgba(255, 255, 255, 0.9)"
+            groove_bg = "rgba(0, 0, 0, 0.08)"
+            active_indicator = "#34C759"  # Green for active state
         else:
-            glass_bg = "#22000000"  # translucent black (~13%) on dark
-            hover_bg = "#26FFFFFF"  # use light overlay for hover to mimic glossy effect
-            pressed_bg = "#33FFFFFF"
-            border_rgba = "rgba(255,255,255,0.08)"
-            groove_bg = "rgba(255,255,255,0.04)"
-            input_bg = "#22FFFFFF"  # subtle overlay for inputs
+            # Dark mode colors
+            bg_primary = "#1C1C1E"
+            bg_secondary = "#2C2C2E"
+            glass_bg = "rgba(44, 44, 46, 0.78)"
+            glass_border = "rgba(255, 255, 255, 0.08)"
+            glass_shadow = "rgba(0, 0, 0, 0.3)"
+            text_primary = "#F5F5F7"
+            text_secondary = "#98989D"
+            accent = "#0A84FF"
+            accent_hover = "#409CFF"
+            accent_pressed = "#0066CC"
+            btn_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(72,72,74,0.9), stop:1 rgba(58,58,60,0.85))"
+            btn_hover = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(82,82,84,0.95), stop:1 rgba(68,68,70,0.9))"
+            btn_pressed = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(58,58,60,0.95), stop:1 rgba(44,44,46,0.9))"
+            btn_border = "rgba(255, 255, 255, 0.1)"
+            btn_border_hover = "rgba(10, 132, 255, 0.6)"
+            input_bg = "rgba(58, 58, 60, 0.8)"
+            groove_bg = "rgba(255, 255, 255, 0.1)"
+            active_indicator = "#30D158"  # Green for active state (dark)
 
-        app.setStyleSheet(
-            f"""
-            /* ----- Base glass container ----- */
-            QMainWindow, QDialog {{
-                background-color: {glass_bg};
-                /* subtle vertical sheen to mimic polished glass */
-                background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.16), stop:0.5 rgba(255,255,255,0.06), stop:1 rgba(255,255,255,0.03));
-                color: palette(window-text);
-                border: 1px solid {border_rgba};
-                border-radius: 16px;
-                padding: 6px;
+        app.setStyleSheet(f"""
+            /* ============ BASE STYLING ============ */
+            QMainWindow {{
+                background-color: {bg_primary};
             }}
 
-            /* Ensure child widgets use the application's base palette to avoid nested rounded borders */
             QWidget {{
-                background-color: palette(base);
-                color: palette(window-text);
+                background-color: transparent;
+                color: {text_primary};
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+                font-size: 13px;
+            }}
+
+            /* ============ GLASSMORPHIC PANELS ============ */
+            QFrame, QGroupBox {{
+                background-color: {glass_bg};
+                border: 1px solid {glass_border};
+                border-radius: 12px;
+            }}
+
+            /* ============ COMPACT CIRCULAR BUTTONS ============ */
+            QPushButton {{
+                background: {btn_bg};
+                color: {text_primary};
+                border: 1px solid {btn_border};
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-weight: 500;
+                font-size: 12px;
+            }}
+
+            QPushButton:hover {{
+                background: {btn_hover};
+                border: 1px solid {btn_border_hover};
+            }}
+
+            QPushButton:pressed {{
+                background: {btn_pressed};
+            }}
+
+            QPushButton:disabled {{
+                color: {text_secondary};
+                opacity: 0.5;
+            }}
+
+            /* Checked state for toggle buttons */
+            QPushButton:checked {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent}, stop:1 {accent_pressed});
+                color: white;
                 border: none;
+            }}
+
+            /* === MODERN MINIMAL MEDIA CONTROLS === */
+            /* Open button - circular with dropdown menu */
+            QPushButton#open_btn {{
+                background: {btn_bg};
+                border: 1px solid {btn_border};
+                border-radius: 22px;
+                padding: 0px;
+            }}
+
+            QPushButton#open_btn:hover {{
+                background: {btn_hover};
+                border: 1px solid {btn_border_hover};
+            }}
+
+            QPushButton#open_btn:pressed {{
+                background: {btn_pressed};
+            }}
+
+            QPushButton#open_btn::menu-indicator {{
+                width: 0px;
+                height: 0px;
+            }}
+
+            /* Play button - largest, accent colored, gesture-enabled */
+            QPushButton#play_btn {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent}, stop:1 {accent_pressed});
+                border: none;
+                border-radius: 28px;
+                padding: 0px;
+            }}
+
+            QPushButton#play_btn:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent_hover}, stop:1 {accent});
+            }}
+
+            QPushButton#play_btn:pressed {{
+                background: {accent_pressed};
+            }}
+
+            /* Small circular buttons - stop, eq, shuffle, loop */
+            QPushButton#stop_btn, QPushButton#eq_btn {{
+                background: {btn_bg};
+                border: 1px solid {btn_border};
+                border-radius: 18px;
+                padding: 0px;
+            }}
+
+            QPushButton#stop_btn:hover, QPushButton#eq_btn:hover {{
+                background: {btn_hover};
+                border: 1px solid {btn_border_hover};
+            }}
+
+            QPushButton#stop_btn:pressed, QPushButton#eq_btn:pressed {{
+                background: {btn_pressed};
+            }}
+
+            /* Shuffle/Loop buttons - circular toggles */
+            QPushButton#shuffle_btn, QPushButton#loop_btn {{
+                background: {btn_bg};
+                border: 1px solid {btn_border};
+                border-radius: 18px;
+                padding: 0px;
+            }}
+
+            QPushButton#shuffle_btn:hover, QPushButton#loop_btn:hover {{
+                background: {btn_hover};
+                border: 1px solid {btn_border_hover};
+            }}
+
+            QPushButton#shuffle_btn:checked, QPushButton#loop_btn:checked {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent}, stop:1 {accent_pressed});
+                border: none;
+            }}
+
+            /* ============ TEXT INPUTS ============ */
+            QTextEdit, QPlainTextEdit {{
+                background-color: {input_bg};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+                border-radius: 10px;
+                padding: 10px;
+                selection-background-color: {accent};
+                selection-color: white;
+                font-size: 13px;
+            }}
+
+            QTextEdit:focus, QPlainTextEdit:focus {{
+                border: 2px solid {accent};
+            }}
+
+            QLineEdit {{
+                background-color: {input_bg};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+                border-radius: 8px;
+                padding: 8px 12px;
+                selection-background-color: {accent};
+                font-size: 13px;
+            }}
+
+            QLineEdit:focus {{
+                border: 2px solid {accent};
+            }}
+
+            /* ============ LIST WIDGETS ============ */
+            QListWidget {{
+                background-color: {glass_bg};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+                border-radius: 12px;
+                padding: 6px;
+                outline: none;
+                font-size: 13px;
+            }}
+
+            QListWidget::item {{
+                padding: 10px 14px;
+                border-radius: 8px;
+                margin: 2px 4px;
+            }}
+
+            QListWidget::item:hover {{
+                background-color: rgba(128, 128, 128, 0.1);
+            }}
+
+            QListWidget::item:selected {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent}, stop:1 {accent_pressed});
+                color: white;
                 border-radius: 8px;
             }}
 
-            /* Panels that intentionally want the glass look */
-            QFrame[frameShape="Panel"] {{
-                background-color: {glass_bg};
-                border-radius: 12px;
-                border: 1px solid rgba(255,255,255,0.08);
+            /* ============ SLIDERS ============ */
+            QSlider {{
+                height: 24px;
             }}
 
-            /* Buttons: softer rounded capsules with inner highlight */
-            QPushButton {{
-                background-color: rgba(255,255,255,0.02);
-                color: palette(button-text);
-                border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 10px;
-                padding: 6px 12px;
-            }}
-            QPushButton:hover {{ background-color: {hover_bg}; }}
-            QPushButton:pressed {{ background-color: {pressed_bg}; }}
-            QPushButton:disabled {{ color: palette(mid); }}
-
-            /* Text inputs & lists: frosted glass surfaces with subtle inner shadow feel */
-            QTextEdit, QListWidget, QLineEdit {{
-                background-color: {input_bg};
-                color: palette(text);
-                border: 1px solid rgba(0,0,0,0.06);
-                border-radius: 10px;
-                selection-background-color: palette(highlight);
-                selection-color: palette(highlighted-text);
-            }}
-
-            /* Sliders: thin groove with highlight handle */
             QSlider::groove:horizontal {{
                 background: {groove_bg};
                 height: 4px;
                 border-radius: 2px;
             }}
-            QSlider::handle:horizontal {{
-                background: palette(highlight);
-                width: 14px;
-                border-radius: 7px;
+
+            QSlider::sub-page:horizontal {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {accent}, stop:1 {accent_hover});
+                border-radius: 2px;
             }}
-            """
-        ) 
+
+            QSlider::handle:horizontal {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #FFFFFF, stop:1 #E8E8E8);
+                width: 18px;
+                height: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
+                border: 1px solid rgba(0, 0, 0, 0.15);
+            }}
+
+            QSlider::handle:horizontal:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #FFFFFF, stop:1 #F0F0F0);
+                border: 1px solid {accent};
+            }}
+
+            /* ============ PROGRESS BAR ============ */
+            QProgressBar {{
+                background-color: {groove_bg};
+                border: none;
+                border-radius: 4px;
+                height: 6px;
+                text-align: center;
+            }}
+
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {accent}, stop:1 {accent_hover});
+                border-radius: 4px;
+            }}
+
+            /* ============ SCROLL BARS ============ */
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 10px;
+                margin: 4px 2px;
+                border-radius: 5px;
+            }}
+
+            QScrollBar::handle:vertical {{
+                background: rgba(128, 128, 128, 0.4);
+                border-radius: 5px;
+                min-height: 40px;
+            }}
+
+            QScrollBar::handle:vertical:hover {{
+                background: rgba(128, 128, 128, 0.6);
+            }}
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+                height: 0;
+            }}
+
+            QScrollBar:horizontal {{
+                background: transparent;
+                height: 10px;
+                margin: 2px 4px;
+                border-radius: 5px;
+            }}
+
+            QScrollBar::handle:horizontal {{
+                background: rgba(128, 128, 128, 0.4);
+                border-radius: 5px;
+                min-width: 40px;
+            }}
+
+            QScrollBar::handle:horizontal:hover {{
+                background: rgba(128, 128, 128, 0.6);
+            }}
+
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: transparent;
+                width: 0;
+            }}
+
+            /* ============ DOCK WIDGETS ============ */
+            QDockWidget {{
+                background-color: {glass_bg};
+                border: 1px solid {glass_border};
+                border-radius: 14px;
+                font-weight: 600;
+            }}
+
+            QDockWidget::title {{
+                background: transparent;
+                padding: 10px 14px;
+                font-weight: 600;
+                font-size: 14px;
+                color: {text_primary};
+            }}
+
+            /* ============ MENUS ============ */
+            QMenu {{
+                background-color: {bg_secondary};
+                border: 1px solid {glass_border};
+                border-radius: 12px;
+                padding: 8px;
+            }}
+
+            QMenu::item {{
+                padding: 10px 20px 10px 14px;
+                border-radius: 8px;
+                margin: 2px 4px;
+                font-size: 13px;
+            }}
+
+            QMenu::item:selected {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent}, stop:1 {accent_pressed});
+                color: white;
+            }}
+
+            QMenu::separator {{
+                height: 1px;
+                background: {glass_border};
+                margin: 6px 12px;
+            }}
+
+            /* ============ LCD DISPLAY ============ */
+            QLCDNumber {{
+                background-color: transparent;
+                color: {text_primary};
+                border: none;
+            }}
+
+            /* ============ TOOLTIPS ============ */
+            QToolTip {{
+                background-color: {bg_secondary};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }}
+
+            /* ============ TAB WIDGET ============ */
+            QTabWidget::pane {{
+                background-color: {glass_bg};
+                border: 1px solid {glass_border};
+                border-radius: 12px;
+            }}
+
+            QTabBar::tab {{
+                background: transparent;
+                color: {text_secondary};
+                padding: 10px 18px;
+                margin: 2px;
+                border-radius: 8px;
+                font-weight: 500;
+            }}
+
+            QTabBar::tab:selected {{
+                background: {btn_bg};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+            }}
+
+            QTabBar::tab:hover:!selected {{
+                background: rgba(128, 128, 128, 0.1);
+            }}
+
+            /* ============ COMBO BOX ============ */
+            QComboBox {{
+                background: {btn_bg};
+                color: {text_primary};
+                border: 1px solid {btn_border};
+                border-radius: 8px;
+                padding: 8px 12px;
+                min-height: 24px;
+            }}
+
+            QComboBox:hover {{
+                border: 1.5px solid {btn_border_hover};
+            }}
+
+            QComboBox::drop-down {{
+                border: none;
+                width: 24px;
+            }}
+
+            QComboBox::down-arrow {{
+                width: 12px;
+                height: 12px;
+            }}
+
+            QComboBox QAbstractItemView {{
+                background-color: {bg_secondary};
+                border: 1px solid {glass_border};
+                border-radius: 8px;
+                selection-background-color: {accent};
+                selection-color: white;
+            }}
+
+            /* ============ SPIN BOX ============ */
+            QSpinBox, QDoubleSpinBox {{
+                background: {input_bg};
+                color: {text_primary};
+                border: 1px solid {glass_border};
+                border-radius: 8px;
+                padding: 6px 10px;
+            }}
+
+            QSpinBox:focus, QDoubleSpinBox:focus {{
+                border: 2px solid {accent};
+            }}
+        """)

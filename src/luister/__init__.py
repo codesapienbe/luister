@@ -14,9 +14,10 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QDockWidget,
     QGraphicsOpacityEffect,
+    QMenu,
 )
 from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer, QThread, pyqtSignal, QPropertyAnimation
-from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QTransform, QPixmap
+from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QPixmap
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 import sys
 import subprocess
@@ -38,11 +39,8 @@ from luister.vectors import (
     shuffle_icon,
     loop_icon,
     apply_shadow,
-    double_left_icon,
-    double_right_icon,
     slider_handle_icon,
     tray_icon,
-    youtube_icon,
 )
 from luister.visualizer import VisualizerWidget
 from luister.lyrics import LyricsWidget  # type: ignore
@@ -85,57 +83,55 @@ class UI(QMainWindow):
             btn.setGeometry(x, y, w, h)
             return btn
 
-        _mk_btn("back_btn", 20, 144, 41, 41)
-        _mk_btn("play_btn", 63, 144, 41, 41)
-        _mk_btn("pause_btn", 106, 144, 41, 41)
-        _mk_btn("stop_btn", 149, 144, 41, 41)
-        _mk_btn("next_btn", 193, 144, 41, 41)
-        _mk_btn("download_btn", 257, 144, 46, 38)
-        # YouTube quick-add button
-        yt_btn = _mk_btn("youtube_btn", 310, 144, 41, 41)
-        _mk_btn("shuffle_btn", 340, 150, 121, 25)
-        _mk_btn("loop_btn", 470, 150, 61, 25)
-        eq_btn = QPushButton("EQ", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(470, 70, 51, 25)
+        # Create buttons (simplified - fewer buttons, more gestures)
+        # Main controls: Open (merged folder+youtube), Play (with swipe for prev/next), Stop
+        _mk_btn("open_btn", 0, 0, 44, 44)  # Combined open button with menu
+        _mk_btn("play_btn", 0, 0, 56, 56)  # Larger play button - supports swipe gestures
+        _mk_btn("stop_btn", 0, 0, 36, 36)
+        _mk_btn("shuffle_btn", 0, 0, 36, 36)
+        _mk_btn("loop_btn", 0, 0, 36, 36)
+        eq_btn = QPushButton("", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(0, 0, 36, 36)
 
-        # Sliders
+        # Compact panel width
+        panel_width = 480
+
+        # Sliders - full width of panel
         time_slider = QSlider(Qt.Orientation.Horizontal, central)
         time_slider.setObjectName("time_slider")
-        time_slider.setGeometry(20, 109, 561, 21)
+        time_slider.setGeometry(16, 100, panel_width - 32, 24)
 
         volume_slider = QSlider(Qt.Orientation.Horizontal, central)
         volume_slider.setObjectName("volume_slider")
-        volume_slider.setGeometry(200, 80, 131, 16)
+        volume_slider.setGeometry(180, 68, 120, 20)
 
-        # Displays
+        # Displays - compact layout
         time_lcd = QTextEdit(central)
         time_lcd.setObjectName("time_lcd")
-        time_lcd.setGeometry(20, 10, 161, 81)
+        time_lcd.setGeometry(16, 10, 150, 50)
         time_lcd.setReadOnly(True)
 
         title_lcd = QTextEdit(central)
         title_lcd.setObjectName("title_lcd")
-        title_lcd.setGeometry(210, 10, 371, 21)
+        title_lcd.setGeometry(180, 10, panel_width - 196, 50)
         title_lcd.setReadOnly(True)
 
         kbps_lcd = QLCDNumber(central)
         kbps_lcd.setObjectName("lcdNumber_3")
-        kbps_lcd.setGeometry(200, 50, 31, 23)
+        kbps_lcd.setGeometry(180, 42, 40, 20)
 
         khz_lcd = QLCDNumber(central)
         khz_lcd.setObjectName("lcdNumber_4")
-        khz_lcd.setGeometry(280, 50, 31, 23)
+        khz_lcd.setGeometry(230, 42, 40, 20)
 
         # YouTube download progress bar
         self.yt_progress = QProgressBar(central)
         self.yt_progress.setObjectName("yt_progress")
-        self.yt_progress.setGeometry(20, 190, 561, 12)
+        self.yt_progress.setGeometry(16, 195, panel_width - 32, 8)
         self.yt_progress.setRange(0, 0)  # indeterminate
         self.yt_progress.hide()
 
-        # End of manual UI build
-        # Enforce single-app width with all components docked and visible
-        # Central area remains similar size; overall window widened to accommodate docks
-        self.resize(1120, 420)  # expanded width/height to fit docks without overlap
+        # Window size: compact main panel + wide playlist dock
+        self.resize(1200, 380)  # wider for larger playlist
 
         # initial LCD text (replicates old HTML)
         time_lcd.setPlainText('▶    00:00')
@@ -156,20 +152,21 @@ class UI(QMainWindow):
         # lyrics window created lazily
         self.lyrics: Optional[LyricsWidget] = None
 
-        # Define widgets
-        #Buttons
-        self.back_btn = self.findChild(QPushButton, "back_btn")
+        # Define widgets (simplified button set)
+        # Buttons
+        self.open_btn = self.findChild(QPushButton, "open_btn")
         self.play_btn = self.findChild(QPushButton, "play_btn")
-        self.pause_btn = self.findChild(QPushButton, "pause_btn")
         self.stop_btn = self.findChild(QPushButton, "stop_btn")
-        self.next_btn = self.findChild(QPushButton, "next_btn")
-        self.download_btn = self.findChild(QPushButton, "download_btn")
-        self.youtube_btn = self.findChild(QPushButton, "youtube_btn")
-        if self.youtube_btn is not None:
-            self.youtube_btn.setToolTip('Add YouTube URL (paste)')
         self.eq_btn = self.findChild(QPushButton, "eq_btn")
         self.shuffle_btn = self.findChild(QPushButton, 'shuffle_btn')
         self.loop_btn = self.findChild(QPushButton, 'loop_btn')
+
+        # Backwards compatibility - some methods reference these
+        self.back_btn = None
+        self.next_btn = None
+        self.pause_btn = None
+        self.download_btn = None
+        self.youtube_btn = None
         # No menubar required: use OS theme dynamically and keep all widgets docked and visible.
         # Ensure theme QAction attributes exist so menu-sync calls are safe even without a menubar
         # These actions are checkable placeholders only; the app does not expose a menubar in normal use
@@ -185,82 +182,93 @@ class UI(QMainWindow):
             self._apply_system_theme()
         except Exception:
             pass
-        #set icons
-        sp = QStyle.StandardPixmap  # type: ignore[attr-defined]
-        self.back_btn.setIcon(double_left_icon())
+        # Set icons for simplified button set
+        self.open_btn.setIcon(folder_icon())
         self.play_btn.setIcon(play_icon())
-        self.pause_btn.setIcon(pause_icon())
         self.stop_btn.setIcon(stop_icon())
-        self.next_btn.setIcon(double_right_icon())
-        self.download_btn.setIcon(folder_icon())
-        self.youtube_btn.setIcon(youtube_icon())
         self.eq_btn.setIcon(eq_icon())
-
-        # Normalize button appearance and spacing
-        btns = [
-            self.back_btn,
-            self.play_btn,
-            self.pause_btn,
-            self.stop_btn,
-            self.next_btn,
-            self.download_btn,
-            self.youtube_btn,
-            self.eq_btn,
-            self.shuffle_btn,
-            self.loop_btn,
-        ]
-        # adjust width to fit larger icon set and avoid overlap
-        for b in btns:
-            try:
-                b.setText("")
-                b.setIconSize(QSize(28, 28))
-                b.setFixedHeight(42)
-                apply_shadow(b)
-            except Exception:
-                pass
-
-        # make widths uniform based on play_btn but ensure enough room
-        try:
-            base_w = max(48, self.play_btn.size().width())
-        except Exception:
-            base_w = 48
-        for b in (self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.back_btn, self.download_btn, self.youtube_btn, self.eq_btn):
-            try:
-                b.setFixedSize(base_w, 42)
-            except Exception:
-                pass
-        # shuffle & loop slightly wider
-        try:
-            self.shuffle_btn.setFixedSize(base_w + 40, 42)
-            self.loop_btn.setFixedSize(base_w + 20, 42)
-        except Exception:
-            pass
-
-        # reposition controls with larger spacing
-        gap = 12
-        x = 20
-        y = 144
-        for b in (self.back_btn, self.play_btn, self.pause_btn, self.stop_btn, self.next_btn, self.download_btn, self.youtube_btn, self.shuffle_btn, self.loop_btn):
-            try:
-                b.move(x, y)
-                x += b.width() + gap
-            except Exception:
-                pass
-
-
-        # assign icons to shuffle/loop
         self.shuffle_btn.setIcon(shuffle_icon())
         self.loop_btn.setIcon(loop_icon())
 
-        #click Buttons
-        self.back_btn.clicked.connect(self.back)
-        self.play_btn.clicked.connect(self.play_stop_toggle)
-        self.pause_btn.clicked.connect(self.pause)
+        # === Modern minimal controls - fewer buttons, more gestures ===
+        # Sizes
+        open_size = 44
+        play_size = 56  # Play button is largest - it's the main control
+        small_size = 36
+        icon_open = 22
+        icon_play = 28
+        icon_small = 20
+
+        # Setup Open button with dropdown menu
+        self.open_btn.setText("")
+        self.open_btn.setFixedSize(open_size, open_size)
+        self.open_btn.setIconSize(QSize(icon_open, icon_open))
+        self.open_btn.setToolTip("Open music (folder or YouTube)")
+
+        # Create open menu
+        self._open_menu = QMenu(self.open_btn)
+        self._open_folder_action = self._open_menu.addAction("Open Folder...")
+        self._open_youtube_action = self._open_menu.addAction("YouTube URL...")
+        self._open_folder_action.triggered.connect(self.download)
+        self._open_youtube_action.triggered.connect(self._on_youtube_click)
+        self.open_btn.setMenu(self._open_menu)
+
+        # Play button - larger, supports swipe gestures for prev/next
+        self.play_btn.setText("")
+        self.play_btn.setFixedSize(play_size, play_size)
+        self.play_btn.setIconSize(QSize(icon_play, icon_play))
+        self.play_btn.setToolTip("Play/Pause (swipe left/right for prev/next)")
+
+        # Install gesture handler on play button
+        self._setup_play_button_gestures()
+
+        # Other buttons - uniform small size
+        for btn in [self.stop_btn, self.shuffle_btn, self.loop_btn, self.eq_btn]:
+            if btn:
+                btn.setText("")
+                btn.setFixedSize(small_size, small_size)
+                btn.setIconSize(QSize(icon_small, icon_small))
+
+        # Position controls in a clean centered row
+        y_controls = 140
+        gap = 12
+
+        # Calculate total width and center
+        total_width = open_size + play_size + small_size * 4 + gap * 5
+        start_x = 16
+
+        x = start_x
+
+        # Open button
+        self.open_btn.move(x, y_controls + (play_size - open_size) // 2)
+        x += open_size + gap
+
+        # Play button (central, largest)
+        self.play_btn.move(x, y_controls)
+        x += play_size + gap
+
+        # Stop button
+        self.stop_btn.move(x, y_controls + (play_size - small_size) // 2)
+        x += small_size + gap
+
+        # EQ button
+        self.eq_btn.move(x, y_controls + (play_size - small_size) // 2)
+        x += small_size + gap
+
+        # Shuffle button
+        self.shuffle_btn.move(x, y_controls + (play_size - small_size) // 2)
+        x += small_size + gap
+
+        # Loop button
+        self.loop_btn.move(x, y_controls + (play_size - small_size) // 2)
+
+
+        # Loop button is a toggle state
+        self.loop_btn.setCheckable(True)
+
+        # Click Buttons - simplified set
+        # Note: play_btn click is handled by gesture handler (tap = play/pause)
         self.stop_btn.clicked.connect(self.stop)
-        self.next_btn.clicked.connect(self.next)
-        self.download_btn.clicked.connect(self.download)
-        if self.youtube_btn is not None:
-            self.youtube_btn.clicked.connect(self._on_youtube_click)
         self.shuffle_btn.clicked.connect(self.shuffle)
         self.loop_btn.clicked.connect(self.loop)
         # playlist toggle removed: playlist is always shown as a dock
@@ -518,8 +526,8 @@ QSlider::handle:horizontal {{
         # ensure playlist widget minimum sizes so it is always readable
         try:
             if isinstance(self.ui, PlaylistUI):
-                self.ui.setMinimumWidth(260)
-                self.ui.setMinimumHeight(240)
+                self.ui.setMinimumWidth(380)  # wider playlist
+                self.ui.setMinimumHeight(280)
         except Exception:
             pass
         # Reparent playlist into a dock widget if not already
@@ -537,10 +545,10 @@ QSlider::handle:horizontal {{
                         pass
                     # add playlist right of visualizer by default
                     self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.playlist_dock)
-                # ensure minimum size so it remains visible
+                # ensure minimum size so it remains visible - wider for better readability
                 try:
-                    self.playlist_dock.setMinimumWidth(280)
-                    self.playlist_dock.setMinimumHeight(240)
+                    self.playlist_dock.setMinimumWidth(400)
+                    self.playlist_dock.setMinimumHeight(280)
                 except Exception:
                     pass
         except Exception:
@@ -632,9 +640,20 @@ QSlider::handle:horizontal {{
         self._ensure_lyrics = patched_ensure_lyrics
 
         # -- System Tray Icon Setup --
-        # Create a tray icon that toggles the app visibility on click
-        self.tray_icon = QSystemTrayIcon(tray_icon(), self)  # type: ignore
+        # Create a tray icon using the app's custom icon
+        app_icon = self._load_app_icon()
+        self.tray_icon = QSystemTrayIcon(app_icon, self)  # type: ignore
         self.tray_icon.activated.connect(self._on_tray_activated)  # type: ignore
+
+        # Create context menu for tray icon
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Show")
+        show_action.triggered.connect(self._show_from_tray)
+        tray_menu.addSeparator()
+        quit_action = tray_menu.addAction("Quit")
+        quit_action.triggered.connect(self.graceful_shutdown)
+        self.tray_icon.setContextMenu(tray_menu)
+
         self.tray_icon.show()
         # Ensure closing child docks does not quit the app. Catch close events on docks and hide instead
         try:
@@ -655,39 +674,69 @@ QSlider::handle:horizontal {{
         except Exception:
             pass
 
-        # tray icon rotating animation
-        self._tray_base_icon = tray_icon()
-        # Ensure the application/window taskbar uses the same icon as the system tray
+        # Store the app icon for tray and window
+        self._tray_base_icon = app_icon
+        # Ensure the application/window taskbar uses the same icon
         try:
             app = QApplication.instance()
-            # Only call setWindowIcon when we have a QApplication instance (type-checker friendly)
             if isinstance(app, QApplication):
-                app.setWindowIcon(self._tray_base_icon)
+                app.setWindowIcon(app_icon)
+            self.setWindowIcon(app_icon)
         except Exception:
-            # benign if setting app icon fails on some platforms
             pass
-        self._tray_rotation_angle = 0
-        self._tray_timer = QTimer(self)
-        self._tray_timer.timeout.connect(self._rotate_tray_icon)
-        # timer will start when playback begins
 
     def set_Enabled_button(self):
-        if not self.playlist_urls:
-            self.back_btn.setEnabled(False)
-            self.play_btn.setEnabled(False)
-            self.pause_btn.setEnabled(False)
-            self.stop_btn.setEnabled(False)
-            self.next_btn.setEnabled(False)
-            self.shuffle_btn.setEnabled(False)
-            self.loop_btn.setEnabled(False)
-        else:
-            self.back_btn.setEnabled(True)
-            self.play_btn.setEnabled(True)
-            self.pause_btn.setEnabled(True)
-            self.stop_btn.setEnabled(True)
-            self.next_btn.setEnabled(True)
-            self.shuffle_btn.setEnabled(True)
-            self.loop_btn.setEnabled(True)
+        """Enable/disable playback buttons based on playlist state."""
+        has_songs = bool(self.playlist_urls)
+        # Simplified button set
+        for btn in [self.play_btn, self.stop_btn, self.shuffle_btn, self.loop_btn]:
+            if btn:
+                btn.setEnabled(has_songs)
+
+    def _setup_play_button_gestures(self):
+        """Install gesture handling on play button for swipe navigation."""
+        from PyQt6.QtCore import QPoint
+
+        self._gesture_start_pos = None
+        self._gesture_threshold = 30  # Minimum swipe distance in pixels
+
+        # Store original event handlers
+        original_press = self.play_btn.mousePressEvent
+        original_release = self.play_btn.mouseReleaseEvent
+        original_move = self.play_btn.mouseMoveEvent
+
+        def on_press(event):
+            self._gesture_start_pos = event.pos()
+            self._gesture_is_swipe = False
+
+        def on_move(event):
+            if self._gesture_start_pos is not None:
+                delta = event.pos() - self._gesture_start_pos
+                if abs(delta.x()) > self._gesture_threshold:
+                    self._gesture_is_swipe = True
+
+        def on_release(event):
+            if self._gesture_start_pos is not None:
+                delta = event.pos() - self._gesture_start_pos
+
+                if abs(delta.x()) > self._gesture_threshold:
+                    # Swipe detected
+                    if delta.x() > 0:
+                        # Swipe right -> next
+                        self.next()
+                    else:
+                        # Swipe left -> previous
+                        self.back()
+                elif not self._gesture_is_swipe:
+                    # Tap -> play/pause toggle
+                    self.play_pause_toggle()
+
+            self._gesture_start_pos = None
+            self._gesture_is_swipe = False
+
+        self.play_btn.mousePressEvent = on_press
+        self.play_btn.mouseMoveEvent = on_move
+        self.play_btn.mouseReleaseEvent = on_release
 
     #to previous song
     @log_call()
@@ -703,14 +752,25 @@ QSlider::handle:horizontal {{
         self.play_current()
         self._update_playlist_selection()
 
-    # play/stop toggle via single button
+    # play/pause toggle via single button (tap on play button)
     @log_call()
-    def play_stop_toggle(self):
+    def play_pause_toggle(self):
+        """Toggle between play and pause states."""
         if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.Player.stop()
-        else:
+            self.Player.pause()
+        elif self.Player.playbackState() == QMediaPlayer.PlaybackState.PausedState:
             self.Player.play()
-        self.update_play_stop_icon()
+        else:
+            # Stopped state - start playing current track
+            if self.playlist_urls and self.current_index >= 0:
+                self.play_current()
+            else:
+                self.Player.play()
+        self.update_play_pause_icon()
+
+    # Legacy method name for compatibility
+    def play_stop_toggle(self):
+        self.play_pause_toggle()
 
     # maintain separate play() for internal resume calls
     def play(self):
@@ -847,12 +907,29 @@ QSlider::handle:horizontal {{
         # Update progress bar to 100%
         self.yt_progress.setValue(100)
 
+        # Load ALL audio files from the download directory
+        output_dir = Path.home() / ".luister" / "downloads"
+        audio_exts = {'.mp3', '.m4a', '.webm', '.wav', '.flac', '.ogg', '.aac'}
+        all_files = sorted(
+            [str(f) for f in output_dir.iterdir() if f.is_file() and f.suffix.lower() in audio_exts],
+            key=lambda x: Path(x).stat().st_mtime,
+            reverse=True  # newest first
+        )
+
         if self._yt_playback_started:
-            # Playback already started at 10%, now just update the file reference
+            # Playback already started at 10%, reload full directory
             self.title_lcd.setPlainText(f"Download complete: {Path(files[0]).name}")
             self.yt_progress.hide()
 
-            # Load visualizer if visible (lyrics are loaded via context menu only)
+            # Reload playlist with all files from directory
+            self._add_files(all_files, replace=True, play_on_load=False)
+            # Find and select the newly downloaded file
+            for i, f in enumerate(all_files):
+                if f == files[0]:
+                    self.current_index = i
+                    break
+
+            # Load visualizer if visible
             if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
                 widget = self.visualizer_dock.widget()
                 if isinstance(widget, VisualizerWidget):
@@ -861,9 +938,13 @@ QSlider::handle:horizontal {{
 
             self._update_playlist_selection()
         else:
-            # Normal flow - playback didn't start early
-            self._add_files(files, replace=True)
-            self.current_index = len(self.playlist_urls) - len(files)
+            # Normal flow - load all files from directory
+            self._add_files(all_files, replace=True, play_on_load=False)
+            # Find and play the newly downloaded file
+            for i, f in enumerate(all_files):
+                if f == files[0]:
+                    self.current_index = i
+                    break
             self.play_current()
             self.yt_progress.hide()
             self._update_playlist_selection()
@@ -894,16 +975,6 @@ QSlider::handle:horizontal {{
 
     def audiostate_changed(self, state):
         playing = state == QMediaPlayer.PlaybackState.PlayingState
-
-        # Control tray icon rotation
-        if playing:
-            if not self._tray_timer.isActive():
-                self._tray_timer.start(100)  # 10 FPS
-        else:
-            if self._tray_timer.isActive():
-                self._tray_timer.stop()
-                # restore static icon
-                self.tray_icon.setIcon(self._tray_base_icon)  # type: ignore[arg-type]
 
         # Control visualizer animation if it exists
         if self.visualizer_dock is not None:
@@ -957,23 +1028,14 @@ QSlider::handle:horizontal {{
 
     @log_call()
     def loop(self):
-        #if mode plyilist = sequential
+        """Toggle loop mode for current track."""
         if self.loop_plaing is False:
             self.Player.setLoops(QMediaPlayer.Loops.Infinite)
-            self.loop_btn.setStyleSheet(""" background-color : rgb(53, 159, 159);
-                                            border-top: 4px double rgb(253, 253, 253);
-                                            border-right: 4px double #DFDBDD;
-                                            border-bottom: 4px double #BCB8BA;
-                                            border-left: 4px double #EFEAEC;""")
+            self.loop_btn.setChecked(True)
             self.loop_plaing = True
-        #if already play in loop
         else:
             self.Player.setLoops(1)
-            self.loop_btn.setStyleSheet("""background-color: rgb(221, 221, 221);
-                                            border-top: 4px double rgb(253, 253, 253);
-                                            border-right: 4px double #DFDBDD;
-                                            border-bottom: 4px double #BCB8BA;
-                                            border-left: 4px double #EFEAEC;""")
+            self.loop_btn.setChecked(False)
             self.loop_plaing = False
 
     #show error in TextInput
@@ -1282,18 +1344,18 @@ QSlider::handle:horizontal {{
             except Exception:
                 pass
 
-            # Reflow control buttons horizontally with spacing
+            # Reflow control buttons horizontally with spacing (simplified set)
             gap = 12
             x = 20
-            y = 144
+            y = 140
+            play_size = 56  # Play button is largest
+
+            # Simplified button set: open, play, stop, eq, shuffle, loop
             btns = (
-                getattr(self, 'back_btn', None),
+                getattr(self, 'open_btn', None),
                 getattr(self, 'play_btn', None),
-                getattr(self, 'pause_btn', None),
                 getattr(self, 'stop_btn', None),
-                getattr(self, 'next_btn', None),
-                getattr(self, 'download_btn', None),
-                getattr(self, 'youtube_btn', None),
+                getattr(self, 'eq_btn', None),
                 getattr(self, 'shuffle_btn', None),
                 getattr(self, 'loop_btn', None),
             )
@@ -1301,7 +1363,9 @@ QSlider::handle:horizontal {{
                 try:
                     if b is None:
                         continue
-                    b.move(x, y)
+                    # Vertically center smaller buttons relative to play button
+                    btn_y = y + (play_size - b.height()) // 2 if b != self.play_btn else y
+                    b.move(x, btn_y)
                     x += b.width() + gap
                 except Exception:
                     pass
@@ -1315,13 +1379,16 @@ QSlider::handle:horizontal {{
     def _menu_toggle_lyrics(self, checked):
         self.set_lyrics_visible(checked)
 
-    def update_play_stop_icon(self):
-        sp = QStyle.StandardPixmap  # type: ignore[attr-defined]
+    def update_play_pause_icon(self):
+        """Update play button icon based on playback state."""
         if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            icon = self.style().standardIcon(sp.SP_MediaStop)  # type: ignore
+            self.play_btn.setIcon(pause_icon())
         else:
-            icon = self.style().standardIcon(sp.SP_MediaPlay)  # type: ignore
-        self.play_btn.setIcon(icon)
+            self.play_btn.setIcon(play_icon())
+
+    # Legacy method name for compatibility
+    def update_play_stop_icon(self):
+        self.update_play_pause_icon()
 
     def _clear_inline_styles(self):
         from PyQt6.QtWidgets import QWidget
@@ -1331,6 +1398,43 @@ QSlider::handle:horizontal {{
             if isinstance(w, QWidget) and w.styleSheet():  # type: ignore[arg-type]
                 w.setStyleSheet("")
             stack.extend(list(w.findChildren(QWidget)))  # type: ignore[arg-type]
+
+    def _load_app_icon(self) -> QIcon:
+        """Load the app icon from bundled resources or package directory."""
+        # Try multiple locations for the icon
+        icon_paths = []
+
+        # For PyInstaller bundles
+        if getattr(sys, 'frozen', False):
+            app_dir = Path(sys.executable).parent
+            if sys.platform == 'darwin':
+                icon_paths.extend([
+                    app_dir.parent / 'Resources' / 'luister.icns',
+                    app_dir.parent / 'Resources' / 'luister.png',
+                    app_dir / 'luister.icns',
+                    app_dir / 'luister.png',
+                ])
+            else:
+                icon_paths.extend([
+                    app_dir / 'luister.ico',
+                    app_dir / 'luister.png',
+                ])
+
+        # For development: check packaging/icons directory
+        base_path = Path(__file__).resolve().parent
+        icon_paths.extend([
+            base_path.parent.parent / 'packaging' / 'icons' / 'luister.icns',
+            base_path.parent.parent / 'packaging' / 'icons' / 'luister.png',
+            base_path.parent.parent / 'packaging' / 'icons' / 'luister-512.png',
+            base_path / 'icons' / 'luister.png',
+        ])
+
+        for icon_path in icon_paths:
+            if icon_path.exists():
+                return QIcon(str(icon_path))
+
+        # Fallback to the vector tray icon
+        return tray_icon()
 
     def _make_dock_hide_on_close(self, dock):
         """Ensure a QDockWidget hides instead of closing when its titlebar X is clicked.
@@ -1442,61 +1546,11 @@ QSlider::handle:horizontal {{
         # No view menu/actions required when all widgets are always visible
 
     def _apply_dock_styles(self):
-        # Detect current theme
-        is_dark = self._is_dark_palette(QApplication.palette())
-
-        if is_dark:
-            dock_style = '''
-            QDockWidget {
-                background: rgba(20,20,25,0.85);
-                border-radius: 16px;
-                border: 1.5px solid rgba(255,255,255,0.08);
-            }
-            QDockWidget::title {
-                background: rgba(40,40,50,0.9);
-                border-top-left-radius: 16px;
-                border-top-right-radius: 16px;
-                padding: 6px 12px;
-                color: #E8F6F9;
-            }
-            QDockWidget::title:hover {
-                background: rgba(60,60,75,0.95);
-                color: #39BEE6;
-            }
-            QDockWidget::title:active {
-                background: rgba(57,190,230,0.25);
-                color: #FFFFFF;
-            }
-            '''
-        else:
-            dock_style = '''
-            QDockWidget {
-                background: rgba(255,255,255,0.85);
-                border-radius: 16px;
-                border: 1.5px solid rgba(0,0,0,0.08);
-            }
-            QDockWidget::title {
-                background: rgba(240,245,250,0.95);
-                border-top-left-radius: 16px;
-                border-top-right-radius: 16px;
-                padding: 6px 12px;
-                color: #0F2933;
-            }
-            QDockWidget::title:hover {
-                background: rgba(220,235,245,0.98);
-                color: #21808D;
-            }
-            QDockWidget::title:active {
-                background: rgba(90,200,250,0.25);
-                color: #0F2933;
-            }
-            '''
-        if self.visualizer_dock is not None:
-            self.visualizer_dock.setStyleSheet(dock_style)
-        if self.lyrics_dock is not None:
-            self.lyrics_dock.setStyleSheet(dock_style)
-        if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
-            self.playlist_dock.setStyleSheet(dock_style)
+        """Apply crystal glass styling to dock widgets (inherited from theme)."""
+        # Clear any custom styles to inherit from the app theme
+        for dock in [self.visualizer_dock, self.lyrics_dock, getattr(self, 'playlist_dock', None)]:
+            if dock is not None:
+                dock.setStyleSheet("")  # Use theme styles
 
     def _highlight_main_window(self):
         # Animate the main window background color to a highlight and back
@@ -1785,16 +1839,28 @@ QSlider::handle:horizontal {{
         except Exception:
             pass
 
-    # ---- tray icon rotation helper ----
-    def _rotate_tray_icon(self):
+    def _show_from_tray(self):
+        """Show the app from the tray menu."""
         try:
-            size = 32
-            orig_pix = self._tray_base_icon.pixmap(size, size)
-            transform = QTransform()
-            transform.rotate(self._tray_rotation_angle)
-            rotated_pix = orig_pix.transformed(transform, Qt.TransformationMode.SmoothTransformation)
-            self.tray_icon.setIcon(QIcon(rotated_pix))  # type: ignore[arg-type]
-            self._tray_rotation_angle = (self._tray_rotation_angle + 10) % 360
+            self.show()
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+                self.playlist_dock.show()
+        except Exception:
+            pass
+        try:
+            if self.visualizer_dock is not None:
+                self.visualizer_dock.show()
+        except Exception:
+            pass
+        try:
+            if self.lyrics_dock is not None:
+                self.lyrics_dock.show()
         except Exception:
             pass
 
