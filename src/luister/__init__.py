@@ -90,6 +90,11 @@ class UI(QMainWindow):
         volume_slider.setObjectName("volume_slider")
         volume_slider.setGeometry(16, 150, panel_width - 32, 20)  # Full width, same as time_slider
 
+        # Visualizer widget - embedded below buttons (y=240)
+        self.visualizer_widget = VisualizerWidget(central)
+        self.visualizer_widget.setObjectName("visualizer_widget")
+        self.visualizer_widget.setGeometry(16, 240, panel_width - 32, 200)  # Below buttons
+
         # Start maximized for better visibility
         self.showMaximized()
 
@@ -277,72 +282,40 @@ QSlider::handle:horizontal {{
         if files:
             self._add_files(files, replace=True, play_on_load=False)
 
-        # Visualizer dock
+        # Visualizer setup (widget already created in central widget)
+        self.visualizer_dock = None  # No dock - embedded in main window
         try:
-            self.visualizer_widget = VisualizerWidget()
-            self.visualizer_widget.setWindowTitle("Visualizer")
-            # generous default size to remain visible when docked
-            self.visualizer_widget.resize(420, 420)
-            # Ensure visualizer minimum matches lyrics/playlist for readable UI
-            try:
-                self.visualizer_widget.setMinimumWidth(320)
-                self.visualizer_widget.setMinimumHeight(420)
-            except Exception:
-                pass
-            try:
-                self.Player.positionChanged.connect(self.visualizer_widget.update_position)
-            except Exception:
-                pass
-            get_manager().register(self.visualizer_widget)
-            try:
-                self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
-            except Exception:
-                pass
-            # Wire visualizer analysis status to UI: show "Visualizer: loading" while analysis runs
-            if isinstance(self.visualizer_widget, VisualizerWidget):
-                    saved_title: Dict[str, Optional[str]] = {"val": None}
-
-                    def _on_vis_analysis_started():
-                        try:
-                            # cache current title and show loading indicator
-                            saved_title["val"] = self.time_lcd.toPlainText()
-                            self.time_lcd.setPlainText('Visualizer: loading')
-                        except Exception:
-                            pass
-
-                    def _on_vis_analysis_ready(ok: bool):
-                        try:
-                            if ok:
-                                # restore previous title if available
-                                prev = saved_title.get("val")
-                                if prev is not None:
-                                    self.time_lcd.setPlainText(prev)
-                                else:
-                                    self.time_lcd.setPlainText('Visualizer ready')
-                            else:
-                                self.time_lcd.setPlainText('Visualizer failed')
-                        except Exception:
-                            pass
-
-                    self.visualizer_widget.analysis_started.connect(_on_vis_analysis_started)
-                    self.visualizer_widget.analysis_ready.connect(_on_vis_analysis_ready)
-        except Exception as e:
-            from PyQt6.QtWidgets import QLabel
-            self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
-        
-
-        self.visualizer_dock = QDockWidget("Visualizer", self)
-        self.visualizer_dock.setWidget(self.visualizer_widget)
-        self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-        self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
-        # dock to left and don't allow floating to avoid overlap
-        self.visualizer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        try:
-            self._make_dock_hide_on_close(self.visualizer_dock)
+            self.Player.positionChanged.connect(self.visualizer_widget.update_position)
         except Exception:
             pass
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
-        
+        get_manager().register(self.visualizer_widget)
+        # Wire visualizer analysis status to UI
+        if isinstance(self.visualizer_widget, VisualizerWidget):
+            saved_title: Dict[str, Optional[str]] = {"val": None}
+
+            def _on_vis_analysis_started():
+                try:
+                    saved_title["val"] = self.time_lcd.toPlainText()
+                    self.time_lcd.setPlainText('Visualizer: loading')
+                except Exception:
+                    pass
+
+            def _on_vis_analysis_ready(ok: bool):
+                try:
+                    if ok:
+                        prev = saved_title.get("val")
+                        if prev is not None:
+                            self.time_lcd.setPlainText(prev)
+                        else:
+                            self.time_lcd.setPlainText('Visualizer ready')
+                    else:
+                        self.time_lcd.setPlainText('Visualizer failed')
+                except Exception:
+                    pass
+
+            self.visualizer_widget.analysis_started.connect(_on_vis_analysis_started)
+            self.visualizer_widget.analysis_ready.connect(_on_vis_analysis_ready)
+
         # Lyrics dock
         try:
             self.lyrics_widget = LyricsWidget()  # type: ignore
@@ -378,15 +351,14 @@ QSlider::handle:horizontal {{
             state = self._load_gui_state()
             if state.get('visualizer', '0') == '1':
                 try:
-                    if self.visualizer_dock is not None:
-                        self.visualizer_dock.show()
-                        self.visualizer_dock.raise_()
+                    if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+                        self.visualizer_widget.show()
                 except Exception:
                     pass
             else:
                 try:
-                    if self.visualizer_dock is not None:
-                        self.visualizer_dock.hide()
+                    if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+                        self.visualizer_widget.hide()
                 except Exception:
                     pass
             if state.get('lyrics', '0') == '1':
@@ -403,11 +375,10 @@ QSlider::handle:horizontal {{
                 except Exception:
                     pass
         except Exception:
-            # if loading state fails, default to showing docks
+            # if loading state fails, default to showing visualizer
             try:
-                if self.visualizer_dock is not None:
-                    self.visualizer_dock.show()
-                    self.visualizer_dock.raise_()
+                if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+                    self.visualizer_widget.show()
             except Exception:
                 pass
             try:
@@ -460,9 +431,8 @@ QSlider::handle:horizontal {{
         except Exception:
             pass
         try:
-            if self.visualizer_dock is not None:
-                self.visualizer_dock.show()
-                self.visualizer_dock.raise_()
+            if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+                self.visualizer_widget.show()
         except Exception:
             pass
         try:
@@ -580,6 +550,20 @@ QSlider::handle:horizontal {{
             if isinstance(app, QApplication):
                 app.setWindowIcon(app_icon)
             self.setWindowIcon(app_icon)
+        except Exception:
+            pass
+
+        # Trigger initial layout resize after event loop starts
+        QTimer.singleShot(0, self._trigger_initial_resize)
+
+    def _trigger_initial_resize(self):
+        """Force layout update after initialization."""
+        # Manually trigger resizeEvent logic to stretch widgets
+        from PyQt6.QtGui import QResizeEvent
+        from PyQt6.QtCore import QSize
+        try:
+            event = QResizeEvent(self.size(), QSize())
+            self.resizeEvent(event)
         except Exception:
             pass
 
@@ -981,13 +965,11 @@ QSlider::handle:horizontal {{
         playing = state == QMediaPlayer.PlaybackState.PlayingState
 
         # Control visualizer animation if it exists
-        if self.visualizer_dock is not None:
-            widget = self.visualizer_dock.widget()
-            if isinstance(widget, VisualizerWidget):
-                if playing:
-                    widget.resume_animation()
-                else:
-                    widget.pause_animation()
+        if hasattr(self, 'visualizer_widget') and isinstance(self.visualizer_widget, VisualizerWidget):
+            if playing:
+                self.visualizer_widget.resume_animation()
+            else:
+                self.visualizer_widget.pause_animation()
 
     #update slider position
     def position_changed(self, position):
@@ -1163,10 +1145,8 @@ QSlider::handle:horizontal {{
             self.update_play_stop_icon()
 
             # feed audio to visualizer (always, so it's ready when shown)
-            if self.visualizer_dock is not None:
-                widget = self.visualizer_dock.widget()
-                if isinstance(widget, VisualizerWidget):
-                    widget.set_audio(current_url.toLocalFile())
+            if hasattr(self, 'visualizer_widget') and isinstance(self.visualizer_widget, VisualizerWidget):
+                self.visualizer_widget.set_audio(current_url.toLocalFile())
 
             # Lyrics are loaded via context menu only, not auto-loaded
 
@@ -1259,9 +1239,7 @@ QSlider::handle:horizontal {{
         if event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
             if hasattr(self, 'ui') and self.ui.isVisible():
                 self._stack_playlist_below()
-            visualizer_dock = getattr(self, 'visualizer_dock', None)
-            if visualizer_dock is not None and visualizer_dock.isVisible():
-                self._stack_visualizer()
+            # Visualizer is now embedded, no need to stack separately
             lyrics_dock = getattr(self, 'lyrics_dock', None)
             if lyrics_dock is not None and lyrics_dock.isVisible():
                 self._stack_lyrics()
@@ -1270,8 +1248,6 @@ QSlider::handle:horizontal {{
                 if self.isMinimized():
                     if hasattr(self, 'ui'):
                         self.ui.hide()
-                    if visualizer_dock is not None:
-                        visualizer_dock.hide()
                     if lyrics_dock is not None:
                         lyrics_dock.hide()
         if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.time_lcd:
@@ -1329,6 +1305,16 @@ QSlider::handle:horizontal {{
             # Position Play button
             if self.play_btn:
                 self.play_btn.move(x, y)
+
+            # Position Visualizer: below buttons (y=180+52+8=240), full width, remaining height
+            vis_y = 240
+            h = self.height()
+            vis_h = max(120, h - vis_y - 16)  # Leave 16px margin at bottom
+            if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+                try:
+                    self.visualizer_widget.setGeometry(left, vis_y, slider_w, vis_h)
+                except Exception:
+                    pass
         except Exception:
             pass
         super().resizeEvent(event)
@@ -1419,34 +1405,9 @@ QSlider::handle:horizontal {{
             pass
 
     def _ensure_visualizer(self):
-        """Lazily create the visualizer widget and dock if missing."""
-        if getattr(self, 'visualizer_dock', None) is not None:
-            return
-        try:
-            self.visualizer_widget = VisualizerWidget()
-            self.visualizer_widget.setWindowTitle("Visualizer")
-            self.visualizer_widget.resize(150, 400)
-            try:
-                self.Player.positionChanged.connect(self.visualizer_widget.update_position)
-            except Exception:
-                # Player may not be fully initialised yet
-                pass
-            get_manager().register(self.visualizer_widget)
-            try:
-                self.visualizer_widget.closed.connect(lambda: self.set_visualizer_visible(False))
-            except Exception:
-                pass
-            self.visualizer_dock = QDockWidget("Visualizer", self)
-            self.visualizer_dock.setWidget(self.visualizer_widget)
-            self.visualizer_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-            self.visualizer_dock.visibilityChanged.connect(lambda visible: self.set_visualizer_visible(visible))
-            self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.visualizer_dock)
-        except Exception as e:
-            from PyQt6.QtWidgets import QLabel
-            logging.exception("Visualizer init failed: %s", e)
-            self.visualizer_widget = QLabel(f"Visualizer failed to initialize: {e}")
-            self.visualizer_dock = QDockWidget("Visualizer", self)
-            self.visualizer_dock.setWidget(self.visualizer_widget)
+        """Ensure visualizer widget exists (created at init in central widget)."""
+        # Visualizer is now embedded in main window, created during __init__
+        pass
 
     def _ensure_lyrics(self):
         """Lazily create the lyrics widget and dock if missing."""
@@ -1478,10 +1439,12 @@ QSlider::handle:horizontal {{
             self.lyrics_dock.setWidget(self.lyrics_widget)
 
     def set_visualizer_visible(self, visible: bool):
-        self.visualizer_dock.setVisible(visible)
+        # Visualizer is now embedded in main window, not a dock
+        if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+            self.visualizer_widget.setVisible(visible)
         vis_act = getattr(self, 'visualizer_action', None)
-        if vis_act is not None:
-            vis_act.setChecked(self.visualizer_dock.isVisible())
+        if vis_act is not None and hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None:
+            vis_act.setChecked(self.visualizer_widget.isVisible())
 
     def set_lyrics_visible(self, visible: bool):
         if visible:
@@ -1565,7 +1528,9 @@ QSlider::handle:horizontal {{
         self._apply_dock_styles()
 
     def toggle_visualizer(self):
-        self.set_visualizer_visible(not (self.visualizer_dock is not None and self.visualizer_dock.isVisible()))
+        # Visualizer is embedded in main window
+        is_visible = hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None and self.visualizer_widget.isVisible()
+        self.set_visualizer_visible(not is_visible)
     def toggle_lyrics(self):
         self.set_lyrics_visible(not (self.lyrics_dock is not None and self.lyrics_dock.isVisible()))
 
@@ -1712,7 +1677,7 @@ QSlider::handle:horizontal {{
             state_dir = Path.home() / ".luister" / "states"
             state_dir.mkdir(parents=True, exist_ok=True)
             gui_file = state_dir / "gui.txt"
-            visualizer = "1" if self.visualizer_dock is not None and self.visualizer_dock.isVisible() else "0"
+            visualizer = "1" if hasattr(self, 'visualizer_widget') and self.visualizer_widget is not None and self.visualizer_widget.isVisible() else "0"
             lyrics = "1" if self.lyrics_dock is not None and self.lyrics_dock.isVisible() else "0"
             with open(gui_file, "w", encoding="utf-8") as f:
                 f.write(f"visualizer={visualizer}\nlyrics={lyrics}\n")
@@ -1756,11 +1721,7 @@ QSlider::handle:horizontal {{
                             self.ui.hide()
                     except Exception:
                         pass
-                    try:
-                        if self.visualizer_dock is not None:
-                            self.visualizer_dock.hide()
-                    except Exception:
-                        pass
+                    # Visualizer is embedded in main window, hides with it
                     try:
                         if self.lyrics_dock is not None:
                             self.lyrics_dock.hide()
@@ -1789,11 +1750,7 @@ QSlider::handle:horizontal {{
                             self.ui.show()
                     except Exception:
                         pass
-                    try:
-                        if self.visualizer_dock is not None:
-                            self.visualizer_dock.show()
-                    except Exception:
-                        pass
+                    # Visualizer is embedded in main window, shows with it
                     try:
                         if self.lyrics_dock is not None:
                             self.lyrics_dock.show()
@@ -1816,11 +1773,7 @@ QSlider::handle:horizontal {{
                 self.playlist_dock.show()
         except Exception:
             pass
-        try:
-            if self.visualizer_dock is not None:
-                self.visualizer_dock.show()
-        except Exception:
-            pass
+        # Visualizer is embedded in main window, shows with it
         try:
             if self.lyrics_dock is not None:
                 self.lyrics_dock.show()
