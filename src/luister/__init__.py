@@ -1824,7 +1824,7 @@ QSlider::handle:horizontal {{
 
 
 class YTDownloadThread(QThread):
-    """Background thread that uses yt-dlp to fetch audio files from YouTube."""
+    """Background thread that uses yt-dlp Python library to fetch audio files from YouTube."""
 
     finished = pyqtSignal(list)  # list of downloaded file paths
     progress = pyqtSignal(int)  # download progress percentage (0-100)
@@ -1834,67 +1834,91 @@ class YTDownloadThread(QThread):
         self._url = url
         self._output_dir = output_dir
         self._last_progress = -1
+        self._downloaded_file: str | None = None
 
-    def _parse_progress(self, line: str) -> int | None:
-        """Parse yt-dlp output line to extract download percentage."""
-        import re
-        # Match patterns like "[download]  45.2% of" or "[download] 100% of"
-        match = re.search(r'\[download\]\s+(\d+(?:\.\d+)?)%', line)
-        if match:
-            return int(float(match.group(1)))
-        return None
+    def _progress_hook(self, d: dict):
+        """yt-dlp progress hook callback."""
+        if d.get('status') == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate')
+            downloaded = d.get('downloaded_bytes', 0)
+            if total and total > 0:
+                pct = int((downloaded / total) * 100)
+                if pct != self._last_progress:
+                    self._last_progress = pct
+                    self.progress.emit(pct)
+        elif d.get('status') == 'finished':
+            self._downloaded_file = d.get('filename')
+            self.progress.emit(100)
 
     def run(self):  # noqa: D401
         try:
+            import yt_dlp
+        except ImportError:
+            logging.error("yt_dlp module not found; please install yt-dlp")
+            self.finished.emit([])
+            return
+
+        try:
             self._output_dir.mkdir(parents=True, exist_ok=True)
             before = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
-            # Build yt-dlp command
-            cmd = [
-                "yt-dlp",
-                "-x",  # extract audio
-                "--audio-format", "mp3",
-                "--prefer-ffmpeg",
-                "--embed-thumbnail",
-                "--no-colors",
-                "--newline",  # output progress on new lines for easier parsing
-                "--output",
-                str(self._output_dir / "%(title)s.%(ext)s"),
-                self._url,
-            ]
+
+            # Find ffmpeg - first check bundled location, then system paths
+            ffmpeg_path = None
+
+            # For PyInstaller bundles, check the app's directory first
+            if getattr(sys, 'frozen', False):
+                # Running as bundled app
+                if sys.platform == 'darwin':
+                    # macOS: ffmpeg is in Contents/MacOS/ or Contents/Frameworks/
+                    app_dir = Path(sys.executable).parent
+                    bundle_paths = [
+                        app_dir / 'ffmpeg',
+                        app_dir.parent / 'Frameworks' / 'ffmpeg',
+                        app_dir.parent / 'Resources' / 'ffmpeg',
+                    ]
+                else:
+                    # Windows/Linux: ffmpeg is next to the executable
+                    app_dir = Path(sys.executable).parent
+                    bundle_paths = [app_dir / 'ffmpeg', app_dir / 'ffmpeg.exe']
+
+                for bp in bundle_paths:
+                    if bp.exists():
+                        ffmpeg_path = str(bp)
+                        break
+
+            # Fall back to system locations
+            if not ffmpeg_path:
+                for path in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']:
+                    if Path(path).exists():
+                        ffmpeg_path = path
+                        break
+
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': str(self._output_dir / '%(title)s.%(ext)s'),
+                'progress_hooks': [self._progress_hook],
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'quiet': True,
+                'no_warnings': True,
+            }
+
+            # Add ffmpeg location if found
+            if ffmpeg_path:
+                ffmpeg_dir = str(Path(ffmpeg_path).parent)
+                ydl_opts['ffmpeg_location'] = ffmpeg_dir
+                logging.info("Using ffmpeg from: %s", ffmpeg_dir)
+            else:
+                logging.warning("ffmpeg not found - audio conversion may fail")
 
             try:
-                # Use Popen to get real-time progress output
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1
-                )
-
-                stdout_lines = []
-                for line in proc.stdout:
-                    stdout_lines.append(line)
-                    pct = self._parse_progress(line)
-                    if pct is not None and pct != self._last_progress:
-                        self._last_progress = pct
-                        self.progress.emit(pct)
-
-                proc.wait()
-                returncode = proc.returncode
-                stdout_output = ''.join(stdout_lines)
-
-            except FileNotFoundError:
-                logging.error("yt-dlp not found; please install yt-dlp and ensure it is on PATH")
-                self.finished.emit([])
-                return
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([self._url])
             except Exception as exc:
-                logging.exception("Unexpected error running yt-dlp: %s", exc)
-                self.finished.emit([])
-                return
-
-            if returncode != 0:
-                logging.error("yt-dlp failed with return code %s; output=%s", returncode, stdout_output)
+                logging.exception("yt-dlp download failed: %s", exc)
                 self.finished.emit([])
                 return
 
