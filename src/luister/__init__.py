@@ -287,7 +287,10 @@ QSlider::handle:horizontal {{
         self.show()
 
         # --- create & show playlist under main window ---
-        # Always load songs from the default downloads directory
+        # First, ensure playlist UI is created
+        self._ensure_playlist()
+
+        # Load songs from the default downloads directory
         downloads_dir = Path.home() / ".luister" / "downloads"
         downloads_dir.mkdir(parents=True, exist_ok=True)
 
@@ -299,8 +302,6 @@ QSlider::handle:horizontal {{
         )
         if files:
             self._add_files(files, replace=True, play_on_load=False)
-        else:
-            self._ensure_playlist()
 
         # Visualizer dock
         try:
