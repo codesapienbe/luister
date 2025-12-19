@@ -163,6 +163,8 @@ class VisualizerWidget(QWidget):
         self._peaks = None
         self._smoothed_mags = None
         self._current_index = 0
+        self._status_text = "Analyzing..."
+        self.update()
 
         try:
             self.analysis_started.emit()
@@ -198,7 +200,8 @@ class VisualizerWidget(QWidget):
 
         if self._magnitudes is None:
             painter.setPen(QColor("#444444"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Loading...")
+            status_text = getattr(self, '_status_text', "Loading...")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, status_text)
             painter.end()
             return
 
@@ -324,6 +327,8 @@ class VisualizerWidget(QWidget):
         self._analysis_timeout_timer.stop()
 
         if magnitudes is None or times is None:
+            self._status_text = "Analysis failed"
+            self.update()
             try:
                 self.analysis_ready.emit(False)
             except Exception:
@@ -352,6 +357,8 @@ class VisualizerWidget(QWidget):
             self._analyzer_thread.wait(200)
             if self._analyzer_thread.isRunning():
                 self._analyzer_thread.terminate()
+        self._status_text = "Analysis timeout"
+        self.update()
         try:
             self.analysis_ready.emit(False)
         except Exception:

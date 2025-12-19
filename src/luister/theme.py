@@ -152,22 +152,25 @@ class Theme:
                 border: none;
             }}
 
-            /* === MODERN MINIMAL MEDIA CONTROLS === */
-            /* Open button - circular with dropdown menu */
+            /* === ULTRA-MINIMAL 2-BUTTON CONTROLS (equal size 52px) === */
+            /* Open button - circular with dropdown menu, light bg for icon visibility */
             QPushButton#open_btn {{
-                background: {btn_bg};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.95), stop:1 rgba(240,240,242,0.9));
                 border: 1px solid {btn_border};
-                border-radius: 22px;
+                border-radius: 26px;
                 padding: 0px;
             }}
 
             QPushButton#open_btn:hover {{
-                background: {btn_hover};
-                border: 1px solid {btn_border_hover};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,1), stop:1 rgba(245,245,247,0.95));
+                border: 2px solid {accent};
             }}
 
             QPushButton#open_btn:pressed {{
-                background: {btn_pressed};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(220,220,222,0.95), stop:1 rgba(210,210,212,0.9));
             }}
 
             QPushButton#open_btn::menu-indicator {{
@@ -175,58 +178,27 @@ class Theme:
                 height: 0px;
             }}
 
-            /* Play button - largest, accent colored, gesture-enabled */
+            /* Play button - accent colored, white icon for contrast */
             QPushButton#play_btn {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 {accent}, stop:1 {accent_pressed});
                 border: none;
-                border-radius: 28px;
+                border-radius: 26px;
                 padding: 0px;
             }}
 
             QPushButton#play_btn:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 {accent_hover}, stop:1 {accent});
+                border: 2px solid rgba(255, 255, 255, 0.4);
             }}
 
             QPushButton#play_btn:pressed {{
                 background: {accent_pressed};
             }}
 
-            /* Small circular buttons - stop, eq, shuffle, loop */
-            QPushButton#stop_btn, QPushButton#eq_btn {{
-                background: {btn_bg};
-                border: 1px solid {btn_border};
-                border-radius: 18px;
-                padding: 0px;
-            }}
-
-            QPushButton#stop_btn:hover, QPushButton#eq_btn:hover {{
-                background: {btn_hover};
-                border: 1px solid {btn_border_hover};
-            }}
-
-            QPushButton#stop_btn:pressed, QPushButton#eq_btn:pressed {{
-                background: {btn_pressed};
-            }}
-
-            /* Shuffle/Loop buttons - circular toggles */
-            QPushButton#shuffle_btn, QPushButton#loop_btn {{
-                background: {btn_bg};
-                border: 1px solid {btn_border};
-                border-radius: 18px;
-                padding: 0px;
-            }}
-
-            QPushButton#shuffle_btn:hover, QPushButton#loop_btn:hover {{
-                background: {btn_hover};
-                border: 1px solid {btn_border_hover};
-            }}
-
-            QPushButton#shuffle_btn:checked, QPushButton#loop_btn:checked {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {accent}, stop:1 {accent_pressed});
-                border: none;
+            QPushButton#play_btn:disabled {{
+                background: rgba(128, 128, 128, 0.3);
             }}
 
             /* ============ TEXT INPUTS ============ */
@@ -287,52 +259,83 @@ class Theme:
                 border-radius: 8px;
             }}
 
-            /* ============ SLIDERS ============ */
+            /* ============ SLIDERS (with nav zones) ============ */
             QSlider {{
-                height: 24px;
+                height: 32px;
+            }}
+
+            QSlider#time_slider {{
+                height: 40px;
             }}
 
             QSlider::groove:horizontal {{
-                background: {groove_bg};
-                height: 4px;
-                border-radius: 2px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(128, 128, 128, 0.15),
+                    stop:0.15 {groove_bg},
+                    stop:0.85 {groove_bg},
+                    stop:1 rgba(128, 128, 128, 0.15));
+                height: 6px;
+                border-radius: 3px;
+            }}
+
+            QSlider#time_slider::groove:horizontal {{
+                height: 8px;
+                border-radius: 4px;
             }}
 
             QSlider::sub-page:horizontal {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {accent}, stop:1 {accent_hover});
-                border-radius: 2px;
+                border-radius: 3px;
+            }}
+
+            QSlider#time_slider::sub-page:horizontal {{
+                border-radius: 4px;
             }}
 
             QSlider::handle:horizontal {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #FFFFFF, stop:1 #E8E8E8);
-                width: 18px;
-                height: 18px;
+                width: 20px;
+                height: 20px;
                 margin: -7px 0;
-                border-radius: 9px;
+                border-radius: 10px;
                 border: 1px solid rgba(0, 0, 0, 0.15);
+            }}
+
+            QSlider#time_slider::handle:horizontal {{
+                width: 24px;
+                height: 24px;
+                margin: -8px 0;
+                border-radius: 12px;
             }}
 
             QSlider::handle:horizontal:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #FFFFFF, stop:1 #F0F0F0);
-                border: 1px solid {accent};
+                border: 2px solid {accent};
             }}
 
-            /* ============ PROGRESS BAR ============ */
+            /* ============ PROGRESS BAR (download indicator) ============ */
             QProgressBar {{
                 background-color: {groove_bg};
                 border: none;
-                border-radius: 4px;
-                height: 6px;
+                border-radius: 12px;
+                min-height: 24px;
                 text-align: center;
+                font-size: 11px;
+                color: {text_secondary};
             }}
 
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {accent}, stop:1 {accent_hover});
-                border-radius: 4px;
+                border-radius: 12px;
+            }}
+
+            QProgressBar#yt_progress {{
+                min-height: 24px;
+                border-radius: 12px;
             }}
 
             /* ============ SCROLL BARS ============ */

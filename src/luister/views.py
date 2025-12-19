@@ -4,13 +4,17 @@ from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QPushButton,
     QListWidget,
+    QListWidgetItem,
     QTextEdit,
     QMenu,
+    QProgressBar,
+    QLabel,
 )
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
-from PyQt6.QtGui import QDropEvent, QAction
+from PyQt6.QtGui import QDropEvent, QAction, QColor, QBrush
 
 class SongListWidget(QListWidget):
     """QListWidget that accepts audio files via drag-and-drop."""
@@ -99,6 +103,9 @@ class PlaylistUI(QMainWindow):
         super().__init__(parent=main_window)
         self.main_window = main_window
 
+        # Track download status per item (index -> status dict)
+        self._download_status: dict = {}
+
         # --- Build UI programmatically (Designer-free) ---
         self.setWindowTitle("Playlist")
         self.setObjectName("winamp_playlist")
@@ -114,6 +121,30 @@ class PlaylistUI(QMainWindow):
         self.list_songs = SongListWidget(self)
         self.list_songs.setObjectName("list_songs")
         layout.addWidget(self.list_songs, stretch=1)
+
+        # Download progress section (at bottom of playlist)
+        self._download_container = QWidget(self)
+        download_layout = QVBoxLayout(self._download_container)
+        download_layout.setContentsMargins(0, 4, 0, 0)
+        download_layout.setSpacing(2)
+
+        # Progress label shows current download status
+        self._download_label = QLabel("", self)
+        self._download_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        download_layout.addWidget(self._download_label)
+
+        # Progress bar for current download
+        self._download_progress = QProgressBar(self)
+        self._download_progress.setObjectName("playlist_download_progress")
+        self._download_progress.setFixedHeight(16)
+        self._download_progress.setRange(0, 100)
+        self._download_progress.setValue(0)
+        self._download_progress.setTextVisible(True)
+        self._download_progress.setFormat("%p%")
+        download_layout.addWidget(self._download_progress)
+
+        layout.addWidget(self._download_container)
+        self._download_container.hide()  # Hidden by default
 
         # Optional time display area (mirrors old UI element)
         self.time_song_text = QTextEdit(self)
@@ -136,6 +167,65 @@ class PlaylistUI(QMainWindow):
         self._clear_inline_styles()
 
         self.show()
+
+    # ---- Download progress methods ----
+
+    def show_download_progress(self, label: str = "Downloading..."):
+        """Show the download progress bar with a label."""
+        self._download_label.setText(label)
+        self._download_progress.setValue(0)
+        self._download_container.show()
+
+    def update_download_progress(self, percent: int, label: str | None = None):
+        """Update the download progress bar percentage and optional label."""
+        self._download_progress.setValue(percent)
+        if label:
+            self._download_label.setText(label)
+
+    def hide_download_progress(self):
+        """Hide the download progress bar."""
+        self._download_container.hide()
+        self._download_label.setText("")
+        self._download_progress.setValue(0)
+
+    def set_item_download_status(self, index: int, status: str):
+        """Set a visual download status indicator for a playlist item.
+
+        Status can be: 'downloading', 'complete', 'error', or empty to clear.
+        """
+        if index < 0 or index >= self.list_songs.count():
+            return
+
+        item = self.list_songs.item(index)
+        if item is None:
+            return
+
+        # Store original text if not already stored
+        if index not in self._download_status:
+            self._download_status[index] = {'original': item.text(), 'status': ''}
+
+        original = self._download_status[index]['original']
+        self._download_status[index]['status'] = status
+
+        if status == 'downloading':
+            item.setText(f"⬇️ {original}")
+            item.setForeground(QBrush(QColor("#FFA500")))  # Orange
+        elif status == 'complete':
+            item.setText(f"✓ {original}")
+            item.setForeground(QBrush(QColor("#00CC00")))  # Green
+        elif status == 'error':
+            item.setText(f"✗ {original}")
+            item.setForeground(QBrush(QColor("#FF4444")))  # Red
+        else:
+            # Clear status - restore original
+            item.setText(original)
+            item.setForeground(QBrush())  # Reset to default
+
+    def clear_download_status(self):
+        """Clear all download status indicators."""
+        for index in list(self._download_status.keys()):
+            self.set_item_download_status(index, '')
+        self._download_status.clear()
 
     def handle_dropped_urls(self, urls):
         paths = [url.toLocalFile() for url in urls]

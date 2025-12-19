@@ -33,12 +33,7 @@ from luister.theme import Theme
 from luister.vectors import (
     play_icon,
     pause_icon,
-    stop_icon,
-    eq_icon,
     folder_icon,
-    shuffle_icon,
-    loop_icon,
-    apply_shadow,
     slider_handle_icon,
     tray_icon,
 )
@@ -83,52 +78,37 @@ class UI(QMainWindow):
             btn.setGeometry(x, y, w, h)
             return btn
 
-        # Create buttons (simplified - fewer buttons, more gestures)
-        # Main controls: Open (merged folder+youtube), Play (with swipe for prev/next), Stop
-        _mk_btn("open_btn", 0, 0, 44, 44)  # Combined open button with menu
-        _mk_btn("play_btn", 0, 0, 56, 56)  # Larger play button - supports swipe gestures
-        _mk_btn("stop_btn", 0, 0, 36, 36)
-        _mk_btn("shuffle_btn", 0, 0, 36, 36)
-        _mk_btn("loop_btn", 0, 0, 36, 36)
-        eq_btn = QPushButton("", central); eq_btn.setObjectName("eq_btn"); eq_btn.setGeometry(0, 0, 36, 36)
+        # Create buttons (minimal - just 2 buttons, equal size)
+        # Open: folder/youtube menu, Play: tap=play/pause, swipe=prev/next, hold=stop
+        btn_size = 52
+        _mk_btn("open_btn", 0, 0, btn_size, btn_size)
+        _mk_btn("play_btn", 0, 0, btn_size, btn_size)
 
         # Compact panel width
         panel_width = 480
 
-        # Sliders - full width of panel
+        # Sliders - positioned below larger time panel
         time_slider = QSlider(Qt.Orientation.Horizontal, central)
         time_slider.setObjectName("time_slider")
-        time_slider.setGeometry(16, 100, panel_width - 32, 24)
+        time_slider.setGeometry(16, 120, panel_width - 32, 24)  # Below time_lcd (y=10+100+10)
 
         volume_slider = QSlider(Qt.Orientation.Horizontal, central)
         volume_slider.setObjectName("volume_slider")
-        volume_slider.setGeometry(180, 68, 120, 20)
+        volume_slider.setGeometry(330, 120, 120, 20)  # Beside title area
 
-        # Displays - compact layout
+        # Displays - time panel 2x larger
         time_lcd = QTextEdit(central)
         time_lcd.setObjectName("time_lcd")
-        time_lcd.setGeometry(16, 10, 150, 50)
+        time_lcd.setGeometry(16, 10, 300, 100)  # 2x width and height
         time_lcd.setReadOnly(True)
 
         title_lcd = QTextEdit(central)
         title_lcd.setObjectName("title_lcd")
-        title_lcd.setGeometry(180, 10, panel_width - 196, 50)
+        title_lcd.setGeometry(330, 10, panel_width - 346, 100)  # Adjusted position and height
         title_lcd.setReadOnly(True)
 
-        kbps_lcd = QLCDNumber(central)
-        kbps_lcd.setObjectName("lcdNumber_3")
-        kbps_lcd.setGeometry(180, 42, 40, 20)
-
-        khz_lcd = QLCDNumber(central)
-        khz_lcd.setObjectName("lcdNumber_4")
-        khz_lcd.setGeometry(230, 42, 40, 20)
-
-        # YouTube download progress bar
-        self.yt_progress = QProgressBar(central)
-        self.yt_progress.setObjectName("yt_progress")
-        self.yt_progress.setGeometry(16, 195, panel_width - 32, 8)
-        self.yt_progress.setRange(0, 0)  # indeterminate
-        self.yt_progress.hide()
+        # Removed unused kbps_lcd and khz_lcd - not visible/useful in minimal UI
+        # Note: Download progress bar moved to playlist component (PlaylistUI)
 
         # Window size: compact main panel + wide playlist dock
         self.resize(1200, 380)  # wider for larger playlist
@@ -152,57 +132,41 @@ class UI(QMainWindow):
         # lyrics window created lazily
         self.lyrics: Optional[LyricsWidget] = None
 
-        # Define widgets (simplified button set)
-        # Buttons
+        # Define widgets (minimal - just 2 buttons)
         self.open_btn = self.findChild(QPushButton, "open_btn")
         self.play_btn = self.findChild(QPushButton, "play_btn")
-        self.stop_btn = self.findChild(QPushButton, "stop_btn")
-        self.eq_btn = self.findChild(QPushButton, "eq_btn")
-        self.shuffle_btn = self.findChild(QPushButton, 'shuffle_btn')
-        self.loop_btn = self.findChild(QPushButton, 'loop_btn')
 
-        # Backwards compatibility - some methods reference these
+        # Backwards compatibility - removed buttons set to None
         self.back_btn = None
         self.next_btn = None
         self.pause_btn = None
+        self.stop_btn = None
         self.download_btn = None
         self.youtube_btn = None
-        # No menubar required: use OS theme dynamically and keep all widgets docked and visible.
-        # Ensure theme QAction attributes exist so menu-sync calls are safe even without a menubar
-        # These actions are checkable placeholders only; the app does not expose a menubar in normal use
-        self.system_action = QAction("System", self)
-        self.system_action.setCheckable(True)
-        self.light_action = QAction("Light", self)
-        self.light_action.setCheckable(True)
-        self.dark_action = QAction("Dark", self)
-        self.dark_action.setCheckable(True)
-        # Apply system theme dynamically at startup
+        self.eq_btn = None
+        self.shuffle_btn = None
+        self.loop_btn = None
+
+        # Always follow system theme (no manual theme switching)
+        self._track_system_theme = True
         try:
-            self._track_system_theme = True
             self._apply_system_theme()
         except Exception:
             pass
-        # Set icons for simplified button set
+        # Set icons for minimal 2-button UI (white icons for contrast on colored bg)
+        from PyQt6.QtGui import QColor
+        white = QColor(255, 255, 255)
         self.open_btn.setIcon(folder_icon())
-        self.play_btn.setIcon(play_icon())
-        self.stop_btn.setIcon(stop_icon())
-        self.eq_btn.setIcon(eq_icon())
-        self.shuffle_btn.setIcon(shuffle_icon())
-        self.loop_btn.setIcon(loop_icon())
+        self.play_btn.setIcon(play_icon(white))  # White icon on blue button
 
-        # === Modern minimal controls - fewer buttons, more gestures ===
-        # Sizes
-        open_size = 44
-        play_size = 56  # Play button is largest - it's the main control
-        small_size = 36
-        icon_open = 22
-        icon_play = 28
-        icon_small = 20
+        # === Ultra-minimal controls - 2 equal-size buttons ===
+        btn_size = 52
+        icon_size = 26
 
         # Setup Open button with dropdown menu
         self.open_btn.setText("")
-        self.open_btn.setFixedSize(open_size, open_size)
-        self.open_btn.setIconSize(QSize(icon_open, icon_open))
+        self.open_btn.setFixedSize(btn_size, btn_size)
+        self.open_btn.setIconSize(QSize(icon_size, icon_size))
         self.open_btn.setToolTip("Open music (folder or YouTube)")
 
         # Create open menu
@@ -213,65 +177,25 @@ class UI(QMainWindow):
         self._open_youtube_action.triggered.connect(self._on_youtube_click)
         self.open_btn.setMenu(self._open_menu)
 
-        # Play button - larger, supports swipe gestures for prev/next
+        # Play button - gesture-enabled (tap=play/pause, swipe=prev/next, hold=stop)
         self.play_btn.setText("")
-        self.play_btn.setFixedSize(play_size, play_size)
-        self.play_btn.setIconSize(QSize(icon_play, icon_play))
-        self.play_btn.setToolTip("Play/Pause (swipe left/right for prev/next)")
+        self.play_btn.setFixedSize(btn_size, btn_size)
+        self.play_btn.setIconSize(QSize(icon_size, icon_size))
+        self.play_btn.setToolTip("Tap: Play/Pause | Swipe: Prev/Next | Hold: Stop")
 
         # Install gesture handler on play button
         self._setup_play_button_gestures()
 
-        # Other buttons - uniform small size
-        for btn in [self.stop_btn, self.shuffle_btn, self.loop_btn, self.eq_btn]:
-            if btn:
-                btn.setText("")
-                btn.setFixedSize(small_size, small_size)
-                btn.setIconSize(QSize(icon_small, icon_small))
-
-        # Position controls in a clean centered row
-        y_controls = 140
+        # Position buttons side by side (below slider at y=120+24)
+        y_controls = 155
         gap = 12
+        x = 16
 
-        # Calculate total width and center
-        total_width = open_size + play_size + small_size * 4 + gap * 5
-        start_x = 16
-
-        x = start_x
-
-        # Open button
-        self.open_btn.move(x, y_controls + (play_size - open_size) // 2)
-        x += open_size + gap
-
-        # Play button (central, largest)
+        self.open_btn.move(x, y_controls)
+        x += btn_size + gap
         self.play_btn.move(x, y_controls)
-        x += play_size + gap
 
-        # Stop button
-        self.stop_btn.move(x, y_controls + (play_size - small_size) // 2)
-        x += small_size + gap
-
-        # EQ button
-        self.eq_btn.move(x, y_controls + (play_size - small_size) // 2)
-        x += small_size + gap
-
-        # Shuffle button
-        self.shuffle_btn.move(x, y_controls + (play_size - small_size) // 2)
-        x += small_size + gap
-
-        # Loop button
-        self.loop_btn.move(x, y_controls + (play_size - small_size) // 2)
-
-
-        # Loop button is a toggle state
-        self.loop_btn.setCheckable(True)
-
-        # Click Buttons - simplified set
-        # Note: play_btn click is handled by gesture handler (tap = play/pause)
-        self.stop_btn.clicked.connect(self.stop)
-        self.shuffle_btn.clicked.connect(self.shuffle)
-        self.loop_btn.clicked.connect(self.loop)
-        # playlist toggle removed: playlist is always shown as a dock
+        # Note: All button clicks handled via gesture handlers
 
         #sliders
         self.time_slider = self.findChild(QSlider, 'time_slider')
@@ -311,22 +235,24 @@ QSlider::handle:horizontal {{
         self.time_slider.sliderMoved.connect(self.set_position)
         self.volume_slider.valueChanged.connect(self.set_volume)
 
+        # Setup progress bar with prev/next navigation zones
+        self._setup_progress_bar_navigation()
+
         #LCD and metadata displays
         self.time_lcd = self.findChild(QTextEdit, 'time_lcd')
-        self.kbps_lcd = self.findChild(QLCDNumber, 'lcdNumber_3')
-        self.khz_lcd = self.findChild(QLCDNumber, 'lcdNumber_4')
         self.title_lcd = self.findChild(QTextEdit, 'title_lcd')
+        # Removed unused LCD displays
+        self.kbps_lcd = None
+        self.khz_lcd = None
 
         # double-click on time_lcd toggles visualizer
         if self.time_lcd is not None:
             self.time_lcd.setCursorWidth(0)
             self.time_lcd.setToolTip("Double-click to show/hide visualizer")
             self.time_lcd.installEventFilter(self)
-        # double-click on title_lcd toggles lyrics view
+        # title_lcd - no toggle, just display
         if self.title_lcd is not None:
             self.title_lcd.setCursorWidth(0)
-            self.title_lcd.setToolTip("Double-click to show/hide lyrics")
-            self.title_lcd.installEventFilter(self)
 
         # create media player and audio output (required by Qt6)
         self.audio_output = QAudioOutput()
@@ -361,21 +287,18 @@ QSlider::handle:horizontal {{
         self.show()
 
         # --- create & show playlist under main window ---
-        # Try to load last playlist dir from global state
-        last_dir = None
-        try:
-            state_dir = Path.home() / ".luister" / "states"
-            playlist_file = state_dir / "playlistdir.txt"
-            if playlist_file.exists():
-                last_dir = playlist_file.read_text(encoding="utf-8").strip()
-        except Exception:
-            pass
+        # Always load songs from the default downloads directory
+        downloads_dir = Path.home() / ".luister" / "downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
 
-        if last_dir and Path(last_dir).is_dir():
-            audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
-            files = [str(p) for p in Path(last_dir).iterdir() if p.suffix.lower() in audio_exts and p.is_file()]
-            if files:
-                self._add_files(files, replace=True, play_on_load=False)
+        audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.webm'}
+        files = sorted(
+            [str(p) for p in downloads_dir.iterdir() if p.suffix.lower() in audio_exts and p.is_file()],
+            key=lambda x: Path(x).stat().st_mtime,
+            reverse=True  # Newest first
+        )
+        if files:
+            self._add_files(files, replace=True, play_on_load=False)
         else:
             self._ensure_playlist()
 
@@ -545,10 +468,10 @@ QSlider::handle:horizontal {{
                         pass
                     # add playlist right of visualizer by default
                     self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.playlist_dock)
-                # ensure minimum size so it remains visible - wider for better readability
+                # ensure minimum size so it remains visible - much wider for better readability
                 try:
-                    self.playlist_dock.setMinimumWidth(400)
-                    self.playlist_dock.setMinimumHeight(280)
+                    self.playlist_dock.setMinimumWidth(600)  # 2x wider
+                    self.playlist_dock.setMinimumHeight(350)
                 except Exception:
                     pass
         except Exception:
@@ -688,34 +611,61 @@ QSlider::handle:horizontal {{
     def set_Enabled_button(self):
         """Enable/disable playback buttons based on playlist state."""
         has_songs = bool(self.playlist_urls)
-        # Simplified button set
-        for btn in [self.play_btn, self.stop_btn, self.shuffle_btn, self.loop_btn]:
-            if btn:
-                btn.setEnabled(has_songs)
+        # Minimal button set - just play button needs enabling
+        if self.play_btn:
+            self.play_btn.setEnabled(has_songs)
 
     def _setup_play_button_gestures(self):
-        """Install gesture handling on play button for swipe navigation."""
-        from PyQt6.QtCore import QPoint
+        """Install gesture handling on play button.
 
+        Gestures:
+        - Tap: Play/Pause toggle
+        - Swipe left/right: Previous/Next track
+        - Hold (500ms): Stop and go to beginning
+        """
         self._gesture_start_pos = None
         self._gesture_threshold = 30  # Minimum swipe distance in pixels
+        self._gesture_is_swipe = False
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setSingleShot(True)
+        self._hold_triggered = False
 
-        # Store original event handlers
-        original_press = self.play_btn.mousePressEvent
-        original_release = self.play_btn.mouseReleaseEvent
-        original_move = self.play_btn.mouseMoveEvent
+        def on_hold_timeout():
+            """Called when hold duration is reached."""
+            self._hold_triggered = True
+            # Stop and go to beginning
+            self.Player.stop()
+            self.Player.setPosition(0)
+            self.update_play_pause_icon()
+            # Visual feedback - briefly show stop state
+            self.title_lcd.setPlainText("⏹ Stopped")
+
+        self._hold_timer.timeout.connect(on_hold_timeout)
 
         def on_press(event):
             self._gesture_start_pos = event.pos()
             self._gesture_is_swipe = False
+            self._hold_triggered = False
+            # Start hold timer (500ms for hold detection)
+            self._hold_timer.start(500)
 
         def on_move(event):
             if self._gesture_start_pos is not None:
                 delta = event.pos() - self._gesture_start_pos
                 if abs(delta.x()) > self._gesture_threshold:
                     self._gesture_is_swipe = True
+                    # Cancel hold if user starts swiping
+                    self._hold_timer.stop()
 
         def on_release(event):
+            # Stop hold timer
+            self._hold_timer.stop()
+
+            if self._hold_triggered:
+                # Hold was triggered, don't do anything else
+                self._gesture_start_pos = None
+                return
+
             if self._gesture_start_pos is not None:
                 delta = event.pos() - self._gesture_start_pos
 
@@ -737,6 +687,52 @@ QSlider::handle:horizontal {{
         self.play_btn.mousePressEvent = on_press
         self.play_btn.mouseMoveEvent = on_move
         self.play_btn.mouseReleaseEvent = on_release
+
+    def _setup_progress_bar_navigation(self):
+        """Setup progress bar with prev/next navigation zones.
+
+        - Click on left 15% → previous track
+        - Click on right 15% → next track
+        - Click in middle → seek to position (normal slider behavior)
+        """
+        if not self.time_slider:
+            return
+
+        # Zone size as fraction of slider width
+        self._nav_zone_size = 0.15  # 15% on each side
+        self._slider_nav_action: Optional[str] = None
+
+        original_mouse_press = self.time_slider.mousePressEvent
+        original_mouse_release = self.time_slider.mouseReleaseEvent
+
+        def on_slider_press(ev):
+            slider_width = self.time_slider.width()
+            click_x = ev.pos().x()
+            zone_width = slider_width * self._nav_zone_size
+
+            if click_x < zone_width:
+                # Left zone - will trigger prev on release
+                self._slider_nav_action = 'prev'
+            elif click_x > slider_width - zone_width:
+                # Right zone - will trigger next on release
+                self._slider_nav_action = 'next'
+            else:
+                # Middle zone - normal seek behavior
+                self._slider_nav_action = None
+                original_mouse_press(ev)
+
+        def on_slider_release(ev):
+            if self._slider_nav_action:
+                if self._slider_nav_action == 'prev':
+                    self.back()
+                elif self._slider_nav_action == 'next':
+                    self.next()
+                self._slider_nav_action = None
+            else:
+                original_mouse_release(ev)
+
+        self.time_slider.mousePressEvent = on_slider_press  # type: ignore
+        self.time_slider.mouseReleaseEvent = on_slider_release  # type: ignore
 
     #to previous song
     @log_call()
@@ -856,98 +852,131 @@ QSlider::handle:horizontal {{
             if not yt_match:
                 self.title_lcd.setPlainText("Invalid YouTube URL")
                 return
-            # Reuse download flow but start YT thread immediately
+
             output_dir = Path.home() / ".luister" / "downloads"
-            self.title_lcd.setPlainText("Downloading from YouTube…")
-            self.yt_progress.setRange(0, 100)  # determinate progress bar
-            self.yt_progress.setValue(0)
-            self.yt_progress.show()
-            self._yt_playback_started = False  # track if playback has been triggered
-            self._yt_download_files = []  # will store files when finished
+            self.title_lcd.setPlainText("Fetching metadata...")
+
+            # Show progress in playlist component
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.show_download_progress("Fetching metadata...")
+
+            # Track base index for new items (append to existing playlist)
+            self._yt_base_index = len(self.playlist_urls)
+            self._yt_items_metadata: list = []  # Store metadata for reference
+            self._yt_playback_started = False
+
             self._yt_thread = YTDownloadThread(url, output_dir)
-            self._yt_thread.progress.connect(self._on_ytdl_progress)
+            # Connect new signals
+            self._yt_thread.metadata_ready.connect(self._on_ytdl_metadata)
+            self._yt_thread.item_progress.connect(self._on_ytdl_item_progress)
+            self._yt_thread.item_complete.connect(self._on_ytdl_item_complete)
+            self._yt_thread.item_error.connect(self._on_ytdl_item_error)
             self._yt_thread.finished.connect(self._on_ytdl_finished)
             self._yt_thread.start()
         except Exception as e:
             self.title_lcd.setPlainText(f"Error starting YouTube download: {e}")
 
-    def _on_ytdl_progress(self, pct: int):  # noqa: D401
-        """Handle download progress updates."""
-        self.yt_progress.setValue(pct)
-        self.title_lcd.setPlainText(f"Downloading from YouTube… {pct}%")
+    def _on_ytdl_metadata(self, items: list):  # noqa: D401
+        """Handle metadata ready - add all items to playlist immediately."""
+        self._yt_items_metadata = items
+        count = len(items)
+        self.title_lcd.setPlainText(f"Found {count} item(s), starting downloads...")
 
-        # Start playback once we reach 10% (and file exists)
-        if pct >= 10 and not self._yt_playback_started:
-            output_dir = Path.home() / ".luister" / "downloads"
-            # Check for partially downloaded files
-            partial_files = list(output_dir.glob("*.mp3")) + list(output_dir.glob("*.mp3.part"))
-            mp3_files = [f for f in partial_files if f.suffix == ".mp3"]
-            if mp3_files:
-                # Sort by modification time to get the most recently created file
-                newest_file = max(mp3_files, key=lambda f: f.stat().st_mtime)
-                self._yt_playback_started = True
-                self._yt_download_files = [str(newest_file)]
-                self._add_files([str(newest_file)], replace=True, play_on_load=False)
-                self.current_index = len(self.playlist_urls) - 1
-                # Start playback without lyrics loading (defer to 100%)
-                current_url = self.playlist_urls[self.current_index]
-                self.Player.setSource(current_url)
-                self.Player.play()
-                self.update_play_stop_icon()
-                # Update title
-                text = f"{self.current_index + 1}. {current_url.fileName()}"
-                self.title_lcd.setPlainText(f"Playing (downloading {pct}%): {current_url.fileName()}")
+        if isinstance(self.ui, PlaylistUI):
+            self.ui.update_download_progress(0, f"Downloading {count} item(s)...")
+
+        # Add all items to playlist with pending status
+        for idx, item in enumerate(items):
+            title = item.get('title', 'Unknown')
+            # Add placeholder to playlist (will be replaced with actual file when complete)
+            playlist_idx = len(self.playlist_urls) + 1
+            # Create a placeholder URL (will be updated when download completes)
+            placeholder_url = QUrl(f"pending://{idx}")
+            self.playlist_urls.append(placeholder_url)
+
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.list_songs.addItem(f"{playlist_idx}. {title}")
+                # Mark as downloading (pending)
+                self.ui.set_item_download_status(self._yt_base_index + idx, 'downloading')
+
+        self.set_Enabled_button()
+        self._update_playlist_selection()
+
+    def _on_ytdl_item_progress(self, item_idx: int, pct: int):  # noqa: D401
+        """Handle per-item download progress."""
+        total_items = len(getattr(self, '_yt_items_metadata', []))
+        overall_pct = int(((item_idx + pct / 100) / total_items) * 100) if total_items > 0 else pct
+
+        item_title = 'Unknown'
+        if hasattr(self, '_yt_items_metadata') and item_idx < len(self._yt_items_metadata):
+            item_title = self._yt_items_metadata[item_idx].get('title', 'Unknown')
+
+        if isinstance(self.ui, PlaylistUI):
+            self.ui.update_download_progress(overall_pct, f"Downloading ({item_idx + 1}/{total_items}): {item_title[:30]}... {pct}%")
+
+        self.title_lcd.setPlainText(f"Downloading ({item_idx + 1}/{total_items}): {pct}%")
+
+    def _on_ytdl_item_complete(self, item_idx: int, file_path: str):  # noqa: D401
+        """Handle individual item download complete."""
+        playlist_idx = self._yt_base_index + item_idx
+
+        # Update the placeholder URL with the actual file
+        if 0 <= playlist_idx < len(self.playlist_urls):
+            self.playlist_urls[playlist_idx] = QUrl.fromLocalFile(file_path)
+
+            # Update playlist item text
+            if isinstance(self.ui, PlaylistUI) and playlist_idx < self.ui.list_songs.count():
+                item = self.ui.list_songs.item(playlist_idx)
+                if item:
+                    item.setText(f"{playlist_idx + 1}. {Path(file_path).name}")
+                self.ui.set_item_download_status(playlist_idx, 'complete')
+
+        # Start playback of first completed item if not already playing
+        if not self._yt_playback_started and item_idx == 0:
+            self._yt_playback_started = True
+            self.current_index = playlist_idx
+            self.play_current()
+
+    def _on_ytdl_item_error(self, item_idx: int, error_msg: str):  # noqa: D401
+        """Handle individual item download error."""
+        playlist_idx = self._yt_base_index + item_idx
+
+        if isinstance(self.ui, PlaylistUI):
+            self.ui.set_item_download_status(playlist_idx, 'error')
+
+        logging.warning("Download failed for item %d: %s", item_idx, error_msg)
 
     def _on_ytdl_finished(self, files: list):  # noqa: D401
-        if not files:
-            self.yt_progress.hide()
-            self.title_lcd.setPlainText('YouTube download failed')
-            return
+        """Handle download batch completion."""
+        # Hide playlist progress bar
+        if isinstance(self.ui, PlaylistUI):
+            self.ui.hide_download_progress()
 
-        # Update progress bar to 100%
-        self.yt_progress.setValue(100)
+        # Log completion
+        file_count = len(files)
+        logging.info("YouTube download batch complete: %d files", file_count)
 
-        # Load ALL audio files from the download directory
-        output_dir = Path.home() / ".luister" / "downloads"
-        audio_exts = {'.mp3', '.m4a', '.webm', '.wav', '.flac', '.ogg', '.aac'}
-        all_files = sorted(
-            [str(f) for f in output_dir.iterdir() if f.is_file() and f.suffix.lower() in audio_exts],
-            key=lambda x: Path(x).stat().st_mtime,
-            reverse=True  # newest first
-        )
-
-        if self._yt_playback_started:
-            # Playback already started at 10%, reload full directory
-            self.title_lcd.setPlainText(f"Download complete: {Path(files[0]).name}")
-            self.yt_progress.hide()
-
-            # Reload playlist with all files from directory
-            self._add_files(all_files, replace=True, play_on_load=False)
-            # Find and select the newly downloaded file
-            for i, f in enumerate(all_files):
-                if f == files[0]:
-                    self.current_index = i
-                    break
-
-            # Load visualizer if visible
-            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
-                widget = self.visualizer_dock.widget()
-                if isinstance(widget, VisualizerWidget):
-                    current_url = self.playlist_urls[self.current_index]
-                    widget.set_audio(current_url.toLocalFile())
-
-            self._update_playlist_selection()
+        if file_count > 0:
+            self.title_lcd.setPlainText(f"Downloaded {file_count} file(s)")
         else:
-            # Normal flow - load all files from directory
-            self._add_files(all_files, replace=True, play_on_load=False)
-            # Find and play the newly downloaded file
-            for i, f in enumerate(all_files):
-                if f == files[0]:
-                    self.current_index = i
-                    break
-            self.play_current()
-            self.yt_progress.hide()
-            self._update_playlist_selection()
+            # Check if we had metadata - if so, all downloads failed
+            if hasattr(self, '_yt_items_metadata') and self._yt_items_metadata:
+                self.title_lcd.setPlainText("Downloads failed")
+            else:
+                self.title_lcd.setPlainText("No items to download")
+
+        # Clean up placeholder URLs (remove any that weren't successfully downloaded)
+        # This handles cases where some items failed
+        valid_urls = [url for url in self.playlist_urls if not url.toString().startswith('pending://')]
+        if len(valid_urls) != len(self.playlist_urls):
+            # Rebuild playlist with only valid URLs
+            self.playlist_urls = valid_urls
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.list_songs.clear()
+                for idx, url in enumerate(self.playlist_urls):
+                    self.ui.list_songs.addItem(f"{idx + 1}. {Path(url.toLocalFile()).name}")
+
+        self._update_playlist_selection()
 
     def set_volume(self, value):
         # Qt6 handles volume via QAudioOutput (0.0 - 1.0)
@@ -1156,8 +1185,8 @@ QSlider::handle:horizontal {{
             self.Player.play()
             self.update_play_stop_icon()
 
-            # feed audio to visualizer
-            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
+            # feed audio to visualizer (always, so it's ready when shown)
+            if self.visualizer_dock is not None:
                 widget = self.visualizer_dock.widget()
                 if isinstance(widget, VisualizerWidget):
                     widget.set_audio(current_url.toLocalFile())
@@ -1179,7 +1208,9 @@ QSlider::handle:horizontal {{
             self.title_lcd.setPlainText(text)
             if isinstance(self.ui, PlaylistUI):
                 self.ui.time_song_text.setPlainText('00:00')
-                self._update_playlist_selection()
+
+            # Always highlight the currently playing song in playlist
+            self._update_playlist_selection()
 
     @log_call()
     def handle_dropped_urls(self, urls):
@@ -1214,27 +1245,8 @@ QSlider::handle:horizontal {{
             if play_on_load:
                 self.play_current()
 
-    def set_theme(self, name: str):
-        if getattr(self, "_current_theme", None) == name:
-            return
-        if name == "system":
-            self._track_system_theme = True
-            self._apply_system_theme()
-        else:
-            self._track_system_theme = False
-            Theme.apply(QApplication.instance(), name)
-            self._update_theme_menu(name)
-            self._current_theme = name
-            # Update dock styles for new theme
-            try:
-                self._apply_dock_styles()
-            except Exception:
-                pass
-
-    def _update_theme_menu(self, name: str):
-        self.system_action.setChecked(name == "system")
-        self.light_action.setChecked(name == "light")
-        self.dark_action.setChecked(name == "dark")
+        # Always update playlist selection to highlight current item
+        self._update_playlist_selection()
 
     # ---- system theme helpers ----
 
@@ -1245,6 +1257,7 @@ QSlider::handle:horizontal {{
         return (0.299 * r + 0.587 * g + 0.114 * b) < 128
 
     def _apply_system_theme(self):
+        """Apply theme based on system dark/light mode."""
         try:
             scheme = QApplication.instance().styleHints().colorScheme()  # type: ignore[attr-defined]
             if scheme == Qt.ColorScheme.Dark:  # type: ignore[attr-defined]
@@ -1255,8 +1268,7 @@ QSlider::handle:horizontal {{
             pal = QApplication.palette()
             name = "dark" if self._is_dark_palette(pal) else "light"
         Theme.apply(QApplication.instance(), name)
-        self._update_theme_menu("system")
-        self._current_theme = "system"
+        self._current_theme = name
         # Update dock styles for new theme
         try:
             self._apply_dock_styles()
@@ -1298,9 +1310,7 @@ QSlider::handle:horizontal {{
         if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.time_lcd:
             self.toggle_visualizer()
             return True
-        if event.type() == QEvent.Type.MouseButtonDblClick and obj is self.title_lcd:
-            self.toggle_lyrics()
-            return True
+        # Lyrics toggle removed - lyrics always visible by default
         if event.type() == QEvent.Type.ApplicationPaletteChange:
             if getattr(self, '_track_system_theme', False):
                 self._apply_system_theme()
@@ -1314,10 +1324,10 @@ QSlider::handle:horizontal {{
         """
         try:
             w = self.width()
-            # Time slider: maintain left margin and right margin relative to window
-            left = 20
-            ts_y = 109
-            ts_h = 21
+            # Time slider: below time_lcd (y=120)
+            left = 16
+            ts_y = 120
+            ts_h = 24
             ts_w = max(200, w - 160)
             if hasattr(self, 'time_slider') and self.time_slider is not None:
                 try:
@@ -1325,50 +1335,39 @@ QSlider::handle:horizontal {{
                 except Exception:
                     pass
 
-            # Title display: expand/shrink with window
-            title_x = 210
-            title_h = 21
-            title_w = max(120, w - 240)
+            # Title display: beside time_lcd (which is 300px wide)
+            title_x = 330
+            title_h = 100
+            title_w = max(120, w - 360)
             if hasattr(self, 'title_lcd') and self.title_lcd is not None:
                 try:
                     self.title_lcd.setGeometry(title_x, 10, title_w, title_h)
                 except Exception:
                     pass
 
-            # Volume slider: anchored near right side of title area
+            # Volume slider: below title area
             try:
-                vol_w = 131
-                vol_x = max(title_x + title_w - vol_w, w - vol_w - 20)
+                vol_w = 120
+                vol_x = 330
                 if hasattr(self, 'volume_slider') and self.volume_slider is not None:
-                    self.volume_slider.setGeometry(vol_x, 80, vol_w, 16)
+                    self.volume_slider.setGeometry(vol_x, ts_y, vol_w, 20)
             except Exception:
                 pass
 
-            # Reflow control buttons horizontally with spacing (simplified set)
+            # Reflow control buttons (minimal 2-button set, equal size)
             gap = 12
-            x = 20
-            y = 140
-            play_size = 56  # Play button is largest
+            x = 16
+            y = 155  # Below slider
+            btn_size = 52
 
-            # Simplified button set: open, play, stop, eq, shuffle, loop
-            btns = (
-                getattr(self, 'open_btn', None),
-                getattr(self, 'play_btn', None),
-                getattr(self, 'stop_btn', None),
-                getattr(self, 'eq_btn', None),
-                getattr(self, 'shuffle_btn', None),
-                getattr(self, 'loop_btn', None),
-            )
-            for b in btns:
-                try:
-                    if b is None:
-                        continue
-                    # Vertically center smaller buttons relative to play button
-                    btn_y = y + (play_size - b.height()) // 2 if b != self.play_btn else y
-                    b.move(x, btn_y)
-                    x += b.width() + gap
-                except Exception:
-                    pass
+            # Position Open button
+            if self.open_btn:
+                self.open_btn.move(x, y)
+                x += btn_size + gap
+
+            # Position Play button
+            if self.play_btn:
+                self.play_btn.move(x, y)
         except Exception:
             pass
         super().resizeEvent(event)
@@ -1381,10 +1380,12 @@ QSlider::handle:horizontal {{
 
     def update_play_pause_icon(self):
         """Update play button icon based on playback state."""
+        from PyQt6.QtGui import QColor
+        white = QColor(255, 255, 255)
         if self.Player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.play_btn.setIcon(pause_icon())
+            self.play_btn.setIcon(pause_icon(white))
         else:
-            self.play_btn.setIcon(play_icon())
+            self.play_btn.setIcon(play_icon(white))
 
     # Legacy method name for compatibility
     def update_play_stop_icon(self):
@@ -1758,7 +1759,8 @@ QSlider::handle:horizontal {{
             pass
 
     def _load_gui_state(self):
-        state = {"visualizer": "0", "lyrics": "0"}
+        # Default: lyrics visible, visualizer hidden
+        state = {"visualizer": "0", "lyrics": "1"}
         try:
             state_dir = Path.home() / ".luister" / "states"
             gui_file = state_dir / "gui.txt"
@@ -1890,17 +1892,35 @@ QSlider::handle:horizontal {{
 
 
 class YTDownloadThread(QThread):
-    """Background thread that uses yt-dlp Python library to fetch audio files from YouTube."""
+    """Background thread that uses yt-dlp Python library to fetch audio files from YouTube.
 
-    finished = pyqtSignal(list)  # list of downloaded file paths
-    progress = pyqtSignal(int)  # download progress percentage (0-100)
+    Improved workflow:
+    1. Extract metadata for all items first (playlist or single video)
+    2. Emit metadata_ready signal with list of items
+    3. Download each item, emitting per-item progress
+    4. Emit item_complete for each finished item
+    5. Emit finished when all done
+    """
+
+    # Emitted with list of dicts: [{'title': str, 'duration': int, 'url': str}, ...]
+    metadata_ready = pyqtSignal(list)
+    # Emitted with (item_index, percent) for per-item progress
+    item_progress = pyqtSignal(int, int)
+    # Emitted with (item_index, file_path) when item download completes
+    item_complete = pyqtSignal(int, str)
+    # Emitted with (item_index, error_msg) when item download fails
+    item_error = pyqtSignal(int, str)
+    # Legacy signals for compatibility
+    finished = pyqtSignal(list)
+    progress = pyqtSignal(int)
 
     def __init__(self, url: str, output_dir: Path):
         super().__init__()
         self._url = url
         self._output_dir = output_dir
         self._last_progress = -1
-        self._downloaded_file: str | None = None
+        self._current_item_index = 0
+        self._downloaded_files: list[str] = []
 
     def _progress_hook(self, d: dict):
         """yt-dlp progress hook callback."""
@@ -1911,10 +1931,36 @@ class YTDownloadThread(QThread):
                 pct = int((downloaded / total) * 100)
                 if pct != self._last_progress:
                     self._last_progress = pct
-                    self.progress.emit(pct)
+                    self.item_progress.emit(self._current_item_index, pct)
+                    self.progress.emit(pct)  # Legacy compatibility
         elif d.get('status') == 'finished':
-            self._downloaded_file = d.get('filename')
+            self.item_progress.emit(self._current_item_index, 100)
             self.progress.emit(100)
+
+    def _find_ffmpeg(self) -> str | None:
+        """Find ffmpeg binary path."""
+        # For PyInstaller bundles, check the app's directory first
+        if getattr(sys, 'frozen', False):
+            if sys.platform == 'darwin':
+                app_dir = Path(sys.executable).parent
+                bundle_paths = [
+                    app_dir / 'ffmpeg',
+                    app_dir.parent / 'Frameworks' / 'ffmpeg',
+                    app_dir.parent / 'Resources' / 'ffmpeg',
+                ]
+            else:
+                app_dir = Path(sys.executable).parent
+                bundle_paths = [app_dir / 'ffmpeg', app_dir / 'ffmpeg.exe']
+
+            for bp in bundle_paths:
+                if bp.exists():
+                    return str(bp)
+
+        # Fall back to system locations
+        for path in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']:
+            if Path(path).exists():
+                return path
+        return None
 
     def run(self):  # noqa: D401
         try:
@@ -1926,72 +1972,112 @@ class YTDownloadThread(QThread):
 
         try:
             self._output_dir.mkdir(parents=True, exist_ok=True)
-            before = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
 
-            # Find ffmpeg - first check bundled location, then system paths
-            ffmpeg_path = None
-
-            # For PyInstaller bundles, check the app's directory first
-            if getattr(sys, 'frozen', False):
-                # Running as bundled app
-                if sys.platform == 'darwin':
-                    # macOS: ffmpeg is in Contents/MacOS/ or Contents/Frameworks/
-                    app_dir = Path(sys.executable).parent
-                    bundle_paths = [
-                        app_dir / 'ffmpeg',
-                        app_dir.parent / 'Frameworks' / 'ffmpeg',
-                        app_dir.parent / 'Resources' / 'ffmpeg',
-                    ]
-                else:
-                    # Windows/Linux: ffmpeg is next to the executable
-                    app_dir = Path(sys.executable).parent
-                    bundle_paths = [app_dir / 'ffmpeg', app_dir / 'ffmpeg.exe']
-
-                for bp in bundle_paths:
-                    if bp.exists():
-                        ffmpeg_path = str(bp)
-                        break
-
-            # Fall back to system locations
-            if not ffmpeg_path:
-                for path in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']:
-                    if Path(path).exists():
-                        ffmpeg_path = path
-                        break
-
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': str(self._output_dir / '%(title)s.%(ext)s'),
-                'progress_hooks': [self._progress_hook],
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
+            # Step 1: Extract metadata without downloading
+            extract_opts = {
                 'quiet': True,
                 'no_warnings': True,
+                'extract_flat': 'in_playlist',  # Don't resolve individual entries yet
             }
 
-            # Add ffmpeg location if found
-            if ffmpeg_path:
-                ffmpeg_dir = str(Path(ffmpeg_path).parent)
-                ydl_opts['ffmpeg_location'] = ffmpeg_dir
-                logging.info("Using ffmpeg from: %s", ffmpeg_dir)
-            else:
-                logging.warning("ffmpeg not found - audio conversion may fail")
-
+            items_to_download = []
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([self._url])
+                with yt_dlp.YoutubeDL(extract_opts) as ydl:
+                    info = ydl.extract_info(self._url, download=False)
+
+                    if info is None:
+                        self.finished.emit([])
+                        return
+
+                    # Handle playlist vs single video
+                    if 'entries' in info:
+                        # It's a playlist
+                        for entry in info.get('entries', []):
+                            if entry:
+                                items_to_download.append({
+                                    'title': entry.get('title', 'Unknown'),
+                                    'duration': entry.get('duration', 0),
+                                    'url': entry.get('url') or entry.get('webpage_url', ''),
+                                    'id': entry.get('id', ''),
+                                })
+                    else:
+                        # Single video
+                        items_to_download.append({
+                            'title': info.get('title', 'Unknown'),
+                            'duration': info.get('duration', 0),
+                            'url': info.get('webpage_url', self._url),
+                            'id': info.get('id', ''),
+                        })
+
+                # Emit metadata so UI can add items to playlist
+                if items_to_download:
+                    self.metadata_ready.emit(items_to_download)
+                    logging.info("Found %d items to download", len(items_to_download))
+
             except Exception as exc:
-                logging.exception("yt-dlp download failed: %s", exc)
+                logging.exception("Failed to extract metadata: %s", exc)
                 self.finished.emit([])
                 return
 
-            after = set(self._output_dir.glob("*.mp3")) | set(self._output_dir.glob("*.m4a")) | set(self._output_dir.glob("*.webm"))
-            new_files = [str(p) for p in sorted(after - before)]
-            logging.info("yt-dlp downloaded %d new files", len(new_files))
-            self.finished.emit(new_files)
+            # Step 2: Download each item individually
+            ffmpeg_path = self._find_ffmpeg()
+            if ffmpeg_path:
+                logging.info("Using ffmpeg from: %s", str(Path(ffmpeg_path).parent))
+            else:
+                logging.warning("ffmpeg not found - audio conversion may fail")
+
+            for idx, item in enumerate(items_to_download):
+                self._current_item_index = idx
+                self._last_progress = -1
+
+                # Sanitize filename
+                safe_title = "".join(c for c in item['title'] if c.isalnum() or c in ' ._-')[:100]
+                if not safe_title:
+                    safe_title = f"video_{item.get('id', idx)}"
+
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': str(self._output_dir / f'{safe_title}.%(ext)s'),
+                    'progress_hooks': [self._progress_hook],
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                    'quiet': True,
+                    'no_warnings': True,
+                }
+
+                if ffmpeg_path:
+                    ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
+
+                try:
+                    before = set(self._output_dir.glob("*.mp3"))
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Download using the item's URL or ID
+                        download_url = item.get('url') or f"https://www.youtube.com/watch?v={item['id']}"
+                        ydl.download([download_url])
+
+                    after = set(self._output_dir.glob("*.mp3"))
+                    new_files = list(after - before)
+                    if new_files:
+                        file_path = str(new_files[0])
+                        self._downloaded_files.append(file_path)
+                        self.item_complete.emit(idx, file_path)
+                        logging.info("Downloaded item %d: %s", idx, file_path)
+                    else:
+                        self.item_error.emit(idx, "No output file created")
+                        logging.warning("No output file for item %d", idx)
+
+                except Exception as exc:
+                    error_msg = str(exc)[:100]
+                    self.item_error.emit(idx, error_msg)
+                    logging.exception("Failed to download item %d: %s", idx, exc)
+
+            # Emit finished with all successfully downloaded files
+            self.finished.emit(self._downloaded_files)
+            logging.info("Download complete: %d files", len(self._downloaded_files))
+
         except Exception:
             logging.exception("YTDownloadThread encountered an unexpected error")
             self.finished.emit([])
