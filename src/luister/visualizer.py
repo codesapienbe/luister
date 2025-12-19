@@ -204,14 +204,23 @@ class VisualizerWidget(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        if self._magnitudes is None:
-            return
-        # get raw magnitude data and apply sensitivity mapping
-        raw_mags = self._magnitudes  # type: ignore
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width()
         h = self.height()
+
+        # Draw dark background for visibility
+        painter.fillRect(0, 0, w, h, QColor("#0a0a0a"))
+
+        if self._magnitudes is None:
+            # Show message when no audio is loaded
+            painter.setPen(QColor("#666666"))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No audio loaded")
+            painter.end()
+            return
+
+        # get raw magnitude data and apply sensitivity mapping
+        raw_mags = self._magnitudes  # type: ignore
         # map raw magnitudes to [0,1] after threshold and exponent
         idx = self._current_index
         raw = raw_mags[idx]

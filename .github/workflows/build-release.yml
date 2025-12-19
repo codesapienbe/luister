@@ -1,0 +1,175 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.1.0)'
+        required: false
+        default: '0.1.0'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller
+
+      - name: Install system dependencies
+        run: |
+          brew install ffmpeg
+
+      - name: Build with PyInstaller
+        run: |
+          python packaging/build.py --clean
+
+      - name: Create DMG
+        run: |
+          python packaging/build.py --dmg
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            dist/Luister.app
+            dist/*.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller
+
+      - name: Install ffmpeg
+        run: |
+          choco install ffmpeg -y
+
+      - name: Build with PyInstaller
+        run: |
+          python packaging/build.py --clean
+
+      - name: Install NSIS
+        run: |
+          choco install nsis -y
+
+      - name: Create Windows Installer
+        run: |
+          python packaging/build.py --installer
+        continue-on-error: true
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/Luister.exe
+            dist/*Setup*.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libportaudio2 \
+            libasound2-dev \
+            libxcb-xinerama0 \
+            libxcb-cursor0 \
+            libgl1-mesa-glx \
+            libxkbcommon-x11-0 \
+            libfuse2 \
+            desktop-file-utils
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          python packaging/build.py --clean
+
+      - name: Create AppImage
+        run: |
+          python packaging/build.py --appimage
+
+      - name: Create Debian package
+        run: |
+          python packaging/build.py --deb
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/luister/
+            dist/*.AppImage
+            dist/*.deb
+
+  release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          find artifacts -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/macos-build/*.dmg
+            artifacts/windows-build/*.exe
+            artifacts/linux-build/*.AppImage
+            artifacts/linux-build/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

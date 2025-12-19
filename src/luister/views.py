@@ -7,16 +7,24 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QListWidget,
     QTextEdit,
+    QMenu,
 )
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
-from PyQt6.QtGui import QDropEvent
+from PyQt6.QtGui import QDropEvent, QAction
 
 class SongListWidget(QListWidget):
     """QListWidget that accepts audio files via drag-and-drop."""
 
+    # Signal emitted when user requests lyrics download for a specific item index
+    lyricsRequested = pyqtSignal(int)
+    # Signal emitted when user requests to remove an item
+    removeRequested = pyqtSignal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
         self._apply_palette_colors()
         # update colors when palette changes
         QApplication.instance().installEventFilter(self)  # type: ignore
@@ -24,6 +32,34 @@ class SongListWidget(QListWidget):
     def _apply_palette_colors(self):
         # Use Qt palette-sensitive CSS values
         self.setStyleSheet("QListWidget { background-color: palette(base); color: palette(text); selection-background-color: palette(highlight); selection-color: palette(highlighted-text); }")
+
+    def _show_context_menu(self, pos):
+        """Show context menu for playlist items."""
+        item = self.itemAt(pos)
+        if item is None:
+            return
+
+        # Get the index from the item text (format: "1. filename.mp3")
+        try:
+            index = int(item.text().split('.')[0]) - 1
+        except (ValueError, IndexError):
+            return
+
+        menu = QMenu(self)
+
+        # Download Lyrics action
+        lyrics_action = QAction("Download Lyrics", self)
+        lyrics_action.triggered.connect(lambda: self.lyricsRequested.emit(index))
+        menu.addAction(lyrics_action)
+
+        menu.addSeparator()
+
+        # Remove from playlist action
+        remove_action = QAction("Remove from Playlist", self)
+        remove_action.triggered.connect(lambda: self.removeRequested.emit(index))
+        menu.addAction(remove_action)
+
+        menu.exec(self.mapToGlobal(pos))
 
     def eventFilter(self, obj, event):  # type: ignore[override]
         from PyQt6.QtCore import QEvent

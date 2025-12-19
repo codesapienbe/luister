@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Luister
+GenericName=Music Player
+Comment=Music player with visualization and lyrics
+Exec=luister %F
+Icon=luister
+Categories=Audio;Music;Player;AudioVideo;
+MimeType=audio/mpeg;audio/mp3;audio/ogg;audio/flac;audio/wav;audio/x-wav;audio/x-flac;audio/x-vorbis+ogg;audio/aac;audio/mp4;audio/x-m4a;
+Terminal=false
+StartupNotify=true
+StartupWMClass=Luister
+Keywords=music;audio;player;mp3;lyrics;visualizer;

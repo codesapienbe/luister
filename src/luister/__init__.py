@@ -799,24 +799,74 @@ QSlider::handle:horizontal {{
             # Reuse download flow but start YT thread immediately
             output_dir = Path.home() / ".luister" / "downloads"
             self.title_lcd.setPlainText("Downloading from YouTube…")
+            self.yt_progress.setRange(0, 100)  # determinate progress bar
+            self.yt_progress.setValue(0)
             self.yt_progress.show()
+            self._yt_playback_started = False  # track if playback has been triggered
+            self._yt_download_files = []  # will store files when finished
             self._yt_thread = YTDownloadThread(url, output_dir)
+            self._yt_thread.progress.connect(self._on_ytdl_progress)
             self._yt_thread.finished.connect(self._on_ytdl_finished)
             self._yt_thread.start()
         except Exception as e:
             self.title_lcd.setPlainText(f"Error starting YouTube download: {e}")
+
+    def _on_ytdl_progress(self, pct: int):  # noqa: D401
+        """Handle download progress updates."""
+        self.yt_progress.setValue(pct)
+        self.title_lcd.setPlainText(f"Downloading from YouTube… {pct}%")
+
+        # Start playback once we reach 10% (and file exists)
+        if pct >= 10 and not self._yt_playback_started:
+            output_dir = Path.home() / ".luister" / "downloads"
+            # Check for partially downloaded files
+            partial_files = list(output_dir.glob("*.mp3")) + list(output_dir.glob("*.mp3.part"))
+            mp3_files = [f for f in partial_files if f.suffix == ".mp3"]
+            if mp3_files:
+                # Sort by modification time to get the most recently created file
+                newest_file = max(mp3_files, key=lambda f: f.stat().st_mtime)
+                self._yt_playback_started = True
+                self._yt_download_files = [str(newest_file)]
+                self._add_files([str(newest_file)], replace=True, play_on_load=False)
+                self.current_index = len(self.playlist_urls) - 1
+                # Start playback without lyrics loading (defer to 100%)
+                current_url = self.playlist_urls[self.current_index]
+                self.Player.setSource(current_url)
+                self.Player.play()
+                self.update_play_stop_icon()
+                # Update title
+                text = f"{self.current_index + 1}. {current_url.fileName()}"
+                self.title_lcd.setPlainText(f"Playing (downloading {pct}%): {current_url.fileName()}")
 
     def _on_ytdl_finished(self, files: list):  # noqa: D401
         if not files:
             self.yt_progress.hide()
             self.title_lcd.setPlainText('YouTube download failed')
             return
-        # Add downloaded files and play first
-        self._add_files(files, replace=True)
-        self.current_index = len(self.playlist_urls) - len(files)
-        self.play_current()
-        self.yt_progress.hide()
-        self._update_playlist_selection()
+
+        # Update progress bar to 100%
+        self.yt_progress.setValue(100)
+
+        if self._yt_playback_started:
+            # Playback already started at 10%, now just update the file reference
+            self.title_lcd.setPlainText(f"Download complete: {Path(files[0]).name}")
+            self.yt_progress.hide()
+
+            # Load visualizer if visible (lyrics are loaded via context menu only)
+            if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
+                widget = self.visualizer_dock.widget()
+                if isinstance(widget, VisualizerWidget):
+                    current_url = self.playlist_urls[self.current_index]
+                    widget.set_audio(current_url.toLocalFile())
+
+            self._update_playlist_selection()
+        else:
+            # Normal flow - playback didn't start early
+            self._add_files(files, replace=True)
+            self.current_index = len(self.playlist_urls) - len(files)
+            self.play_current()
+            self.yt_progress.hide()
+            self._update_playlist_selection()
 
     def set_volume(self, value):
         # Qt6 handles volume via QAudioOutput (0.0 - 1.0)
@@ -941,6 +991,8 @@ QSlider::handle:horizontal {{
                 self.ui = PlaylistUI(main_window=self)
                 self.ui.filesDropped.connect(self._add_files)
                 self.ui.list_songs.itemDoubleClicked.connect(self.clicked_song)  # type: ignore[arg-type]
+                self.ui.list_songs.lyricsRequested.connect(self._on_lyrics_requested)
+                self.ui.list_songs.removeRequested.connect(self._on_remove_requested)
         except Exception as e:
             from PyQt6.QtWidgets import QLabel
             self.ui = QLabel(f"Playlist failed to initialize: {e}")
@@ -961,6 +1013,35 @@ QSlider::handle:horizontal {{
             if 0 <= self.current_index < self.ui.list_songs.count():
                 self.ui.list_songs.setCurrentRow(self.current_index)
                 self.ui.list_songs.scrollToItem(self.ui.list_songs.currentItem())
+
+    def _on_lyrics_requested(self, index: int):
+        """Handle context menu request to download lyrics for a playlist item."""
+        if 0 <= index < len(self.playlist_urls):
+            file_path = self.playlist_urls[index].toLocalFile()
+            # Ensure lyrics dock is visible
+            if self.lyrics_dock is None or not self.lyrics_dock.isVisible():
+                self.toggle_lyrics()
+            # Load lyrics for the selected file
+            if self.lyrics_dock is not None:
+                widget = self.lyrics_dock.widget()
+                if isinstance(widget, LyricsWidget):
+                    widget.show_progress()
+                    widget.load_lyrics(file_path)
+
+    def _on_remove_requested(self, index: int):
+        """Handle context menu request to remove an item from the playlist."""
+        if 0 <= index < len(self.playlist_urls):
+            # Remove from playlist_urls
+            del self.playlist_urls[index]
+            # Adjust current_index if needed
+            if self.current_index >= index and self.current_index > 0:
+                self.current_index -= 1
+            # Refresh playlist display
+            if isinstance(self.ui, PlaylistUI):
+                self.ui.list_songs.clear()
+                for i, url in enumerate(self.playlist_urls, 1):
+                    self.ui.list_songs.addItem(f"{i}. {url.fileName()}")
+            self._update_playlist_selection()
 
     @log_call()
     def toggle_playlist(self):
@@ -1010,27 +1091,17 @@ QSlider::handle:horizontal {{
             self._persist_playing_state(current_url.toLocalFile())
 
             self.Player.setSource(current_url)
-            # if lyrics view is visible and no cached segments yet, wait
-            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
-                widget = self.lyrics_dock.widget()
-                if isinstance(widget, LyricsWidget):
-                    widget.show_progress()  # type: ignore
-                    # set pending playback and start loading lyrics
-                    self._pending_play_when_lyrics_loaded = True
-                    widget.load_lyrics(current_url.toLocalFile())  # type: ignore
-                    return
-            else:
-                self.Player.play()
-                self.update_play_stop_icon()
+            self.Player.play()
+            self.update_play_stop_icon()
+
             # feed audio to visualizer
             if self.visualizer_dock is not None and self.visualizer_dock.isVisible():
                 widget = self.visualizer_dock.widget()
                 if isinstance(widget, VisualizerWidget):
                     widget.set_audio(current_url.toLocalFile())
-            if self.lyrics_dock is not None and self.lyrics_dock.isVisible():
-                widget = self.lyrics_dock.widget()
-                if isinstance(widget, LyricsWidget):
-                    widget.load_lyrics(current_url.toLocalFile())
+
+            # Lyrics are loaded via context menu only, not auto-loaded
+
             # metadata extraction
             if TinyTag is not None:
                 try:
@@ -1092,6 +1163,11 @@ QSlider::handle:horizontal {{
             Theme.apply(QApplication.instance(), name)
             self._update_theme_menu(name)
             self._current_theme = name
+            # Update dock styles for new theme
+            try:
+                self._apply_dock_styles()
+            except Exception:
+                pass
 
     def _update_theme_menu(self, name: str):
         self.system_action.setChecked(name == "system")
@@ -1119,6 +1195,11 @@ QSlider::handle:horizontal {{
         Theme.apply(QApplication.instance(), name)
         self._update_theme_menu("system")
         self._current_theme = "system"
+        # Update dock styles for new theme
+        try:
+            self._apply_dock_styles()
+        except Exception:
+            pass
 
     def _audio_device_changed(self, device):  # noqa: D401
         """Qt signal slot for system default-audio-output changes."""
@@ -1361,32 +1442,61 @@ QSlider::handle:horizontal {{
         # No view menu/actions required when all widgets are always visible
 
     def _apply_dock_styles(self):
-        dock_style = '''
-        QDockWidget {
-            background: rgba(255,255,255,0.15);
-            border-radius: 16px;
-            border: 1.5px solid rgba(0,0,0,0.08);
-        }
-        QDockWidget::title {
-            background: rgba(255,255,255,0.25);
-            border-top-left-radius: 16px;
-            border-top-right-radius: 16px;
-            padding: 6px 12px;
-            color: palette(window-text);
-        }
-        QDockWidget::title:hover {
-            background: rgba(255,255,255,0.40);
-            color: #21808D;
-        }
-        QDockWidget::title:active {
-            background: rgba(33,128,141,0.25);
-            color: #FCFCF9;
-        }
-        '''
+        # Detect current theme
+        is_dark = self._is_dark_palette(QApplication.palette())
+
+        if is_dark:
+            dock_style = '''
+            QDockWidget {
+                background: rgba(20,20,25,0.85);
+                border-radius: 16px;
+                border: 1.5px solid rgba(255,255,255,0.08);
+            }
+            QDockWidget::title {
+                background: rgba(40,40,50,0.9);
+                border-top-left-radius: 16px;
+                border-top-right-radius: 16px;
+                padding: 6px 12px;
+                color: #E8F6F9;
+            }
+            QDockWidget::title:hover {
+                background: rgba(60,60,75,0.95);
+                color: #39BEE6;
+            }
+            QDockWidget::title:active {
+                background: rgba(57,190,230,0.25);
+                color: #FFFFFF;
+            }
+            '''
+        else:
+            dock_style = '''
+            QDockWidget {
+                background: rgba(255,255,255,0.85);
+                border-radius: 16px;
+                border: 1.5px solid rgba(0,0,0,0.08);
+            }
+            QDockWidget::title {
+                background: rgba(240,245,250,0.95);
+                border-top-left-radius: 16px;
+                border-top-right-radius: 16px;
+                padding: 6px 12px;
+                color: #0F2933;
+            }
+            QDockWidget::title:hover {
+                background: rgba(220,235,245,0.98);
+                color: #21808D;
+            }
+            QDockWidget::title:active {
+                background: rgba(90,200,250,0.25);
+                color: #0F2933;
+            }
+            '''
         if self.visualizer_dock is not None:
             self.visualizer_dock.setStyleSheet(dock_style)
         if self.lyrics_dock is not None:
             self.lyrics_dock.setStyleSheet(dock_style)
+        if hasattr(self, 'playlist_dock') and self.playlist_dock is not None:
+            self.playlist_dock.setStyleSheet(dock_style)
 
     def _highlight_main_window(self):
         # Animate the main window background color to a highlight and back
@@ -1717,11 +1827,22 @@ class YTDownloadThread(QThread):
     """Background thread that uses yt-dlp to fetch audio files from YouTube."""
 
     finished = pyqtSignal(list)  # list of downloaded file paths
+    progress = pyqtSignal(int)  # download progress percentage (0-100)
 
     def __init__(self, url: str, output_dir: Path):
         super().__init__()
         self._url = url
         self._output_dir = output_dir
+        self._last_progress = -1
+
+    def _parse_progress(self, line: str) -> int | None:
+        """Parse yt-dlp output line to extract download percentage."""
+        import re
+        # Match patterns like "[download]  45.2% of" or "[download] 100% of"
+        match = re.search(r'\[download\]\s+(\d+(?:\.\d+)?)%', line)
+        if match:
+            return int(float(match.group(1)))
+        return None
 
     def run(self):  # noqa: D401
         try:
@@ -1735,14 +1856,34 @@ class YTDownloadThread(QThread):
                 "--prefer-ffmpeg",
                 "--embed-thumbnail",
                 "--no-colors",
+                "--newline",  # output progress on new lines for easier parsing
                 "--output",
                 str(self._output_dir / "%(title)s.%(ext)s"),
                 self._url,
             ]
 
             try:
-                # Capture stdout/stderr for diagnostics if yt-dlp fails
-                proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+                # Use Popen to get real-time progress output
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+
+                stdout_lines = []
+                for line in proc.stdout:
+                    stdout_lines.append(line)
+                    pct = self._parse_progress(line)
+                    if pct is not None and pct != self._last_progress:
+                        self._last_progress = pct
+                        self.progress.emit(pct)
+
+                proc.wait()
+                returncode = proc.returncode
+                stdout_output = ''.join(stdout_lines)
+
             except FileNotFoundError:
                 logging.error("yt-dlp not found; please install yt-dlp and ensure it is on PATH")
                 self.finished.emit([])
@@ -1752,8 +1893,8 @@ class YTDownloadThread(QThread):
                 self.finished.emit([])
                 return
 
-            if proc.returncode != 0:
-                logging.error("yt-dlp failed with return code %s; stdout=%s stderr=%s", proc.returncode, proc.stdout, proc.stderr)
+            if returncode != 0:
+                logging.error("yt-dlp failed with return code %s; output=%s", returncode, stdout_output)
                 self.finished.emit([])
                 return
 
