@@ -3,27 +3,20 @@ from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
     QPushButton,
-    QStyle,
     QSlider,
     QFileDialog,
     QTextEdit,
-    QVBoxLayout,
-    QLCDNumber,
     QSystemTrayIcon,
     QInputDialog,
-    QProgressBar,
     QDockWidget,
     QGraphicsOpacityEffect,
     QMenu,
 )
 from PyQt6.QtCore import QUrl, QEvent, Qt, QSize, QBuffer, QIODevice, QTimer, QThread, pyqtSignal, QPropertyAnimation
-from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPalette, QPixmap
+from PyQt6.QtGui import QIcon, QPalette
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 import sys
-import subprocess
 import re
-import os
-import tempfile
 from pathlib import Path
 from luister.utils import get_html, convert_duration_to_show
 from luister.views import PlaylistUI
@@ -43,11 +36,6 @@ import logging
 from typing import Optional, Dict
 from luister.manager import get_manager
 import json
-
-try:
-    from tinytag import TinyTag  # type: ignore
-except ImportError:
-    TinyTag = None  # type: ignore
 
 setup_logging()
 
@@ -106,9 +94,6 @@ class UI(QMainWindow):
         title_lcd.setObjectName("title_lcd")
         title_lcd.setGeometry(330, 10, panel_width - 346, 100)  # Adjusted position and height
         title_lcd.setReadOnly(True)
-
-        # Removed unused kbps_lcd and khz_lcd - not visible/useful in minimal UI
-        # Note: Download progress bar moved to playlist component (PlaylistUI)
 
         # Window size: compact main panel + wide playlist dock
         self.resize(1200, 380)  # wider for larger playlist
@@ -241,9 +226,6 @@ QSlider::handle:horizontal {{
         #LCD and metadata displays
         self.time_lcd = self.findChild(QTextEdit, 'time_lcd')
         self.title_lcd = self.findChild(QTextEdit, 'title_lcd')
-        # Removed unused LCD displays
-        self.kbps_lcd = None
-        self.khz_lcd = None
 
         # double-click on time_lcd toggles visualizer
         if self.time_lcd is not None:
@@ -1024,8 +1006,8 @@ QSlider::handle:horizontal {{
         try:
             if isinstance(self.ui, PlaylistUI):
                 self.ui.time_song_text.setPlainText('0' + time)
-        except:
-            print('Error Playlist')
+        except Exception:
+            logging.debug('Error updating playlist time display')
 
     #set slider range
     def duration_changed(self, duration):
@@ -1061,11 +1043,13 @@ QSlider::handle:horizontal {{
         """Toggle loop mode for current track."""
         if self.loop_plaing is False:
             self.Player.setLoops(QMediaPlayer.Loops.Infinite)
-            self.loop_btn.setChecked(True)
+            if self.loop_btn is not None:
+                self.loop_btn.setChecked(True)
             self.loop_plaing = True
         else:
             self.Player.setLoops(1)
-            self.loop_btn.setChecked(False)
+            if self.loop_btn is not None:
+                self.loop_btn.setChecked(False)
             self.loop_plaing = False
 
     #show error in TextInput
@@ -1194,16 +1178,6 @@ QSlider::handle:horizontal {{
 
             # Lyrics are loaded via context menu only, not auto-loaded
 
-            # metadata extraction
-            if TinyTag is not None:
-                try:
-                    tag = TinyTag.get(current_url.toLocalFile())
-                    if self.kbps_lcd:
-                        self.kbps_lcd.display(int(tag.bitrate or 0))
-                    if self.khz_lcd:
-                        self.khz_lcd.display(int((tag.samplerate or 0) / 1000))
-                except Exception:
-                    pass
             # update title display
             text = f"{self.current_index + 1}. {current_url.fileName()}"
             self.title_lcd.setPlainText(text)

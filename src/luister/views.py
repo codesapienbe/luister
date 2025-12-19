@@ -4,16 +4,14 @@ from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QPushButton,
     QListWidget,
-    QListWidgetItem,
     QTextEdit,
     QMenu,
     QProgressBar,
     QLabel,
 )
-from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QDropEvent, QAction, QColor, QBrush
 
 class SongListWidget(QListWidget):
