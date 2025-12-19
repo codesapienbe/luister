@@ -75,28 +75,23 @@ class UI(QMainWindow):
         # Compact panel width
         panel_width = 480
 
-        # Sliders - positioned below larger time panel
+        # Time display panel
+        time_lcd = QTextEdit(central)
+        time_lcd.setObjectName("time_lcd")
+        time_lcd.setGeometry(16, 10, panel_width - 32, 100)  # Full width
+        time_lcd.setReadOnly(True)
+
+        # Sliders - full width, positioned below time panel
         time_slider = QSlider(Qt.Orientation.Horizontal, central)
         time_slider.setObjectName("time_slider")
-        time_slider.setGeometry(16, 120, panel_width - 32, 24)  # Below time_lcd (y=10+100+10)
+        time_slider.setGeometry(16, 120, panel_width - 32, 24)  # Full width
 
         volume_slider = QSlider(Qt.Orientation.Horizontal, central)
         volume_slider.setObjectName("volume_slider")
-        volume_slider.setGeometry(330, 120, 120, 20)  # Beside title area
+        volume_slider.setGeometry(16, 150, panel_width - 32, 20)  # Full width, same as time_slider
 
-        # Displays - time panel 2x larger
-        time_lcd = QTextEdit(central)
-        time_lcd.setObjectName("time_lcd")
-        time_lcd.setGeometry(16, 10, 300, 100)  # 2x width and height
-        time_lcd.setReadOnly(True)
-
-        title_lcd = QTextEdit(central)
-        title_lcd.setObjectName("title_lcd")
-        title_lcd.setGeometry(330, 10, panel_width - 346, 100)  # Adjusted position and height
-        title_lcd.setReadOnly(True)
-
-        # Window size: compact main panel + wide playlist dock
-        self.resize(1200, 380)  # wider for larger playlist
+        # Start maximized for better visibility
+        self.showMaximized()
 
         # initial LCD text (replicates old HTML)
         time_lcd.setPlainText('▶    00:00')
@@ -171,8 +166,8 @@ class UI(QMainWindow):
         # Install gesture handler on play button
         self._setup_play_button_gestures()
 
-        # Position buttons side by side (below slider at y=120+24)
-        y_controls = 155
+        # Position buttons side by side (below volume slider at y=150+20+10)
+        y_controls = 180
         gap = 12
         x = 16
 
@@ -223,18 +218,15 @@ QSlider::handle:horizontal {{
         # Setup progress bar with prev/next navigation zones
         self._setup_progress_bar_navigation()
 
-        #LCD and metadata displays
+        #LCD display (single panel for time and status)
         self.time_lcd = self.findChild(QTextEdit, 'time_lcd')
-        self.title_lcd = self.findChild(QTextEdit, 'title_lcd')
+        self.title_lcd = None  # Removed - using time_lcd for all display
 
         # double-click on time_lcd toggles visualizer
         if self.time_lcd is not None:
             self.time_lcd.setCursorWidth(0)
             self.time_lcd.setToolTip("Double-click to show/hide visualizer")
             self.time_lcd.installEventFilter(self)
-        # title_lcd - no toggle, just display
-        if self.title_lcd is not None:
-            self.title_lcd.setCursorWidth(0)
 
         # create media player and audio output (required by Qt6)
         self.audio_output = QAudioOutput()
@@ -313,8 +305,8 @@ QSlider::handle:horizontal {{
                     def _on_vis_analysis_started():
                         try:
                             # cache current title and show loading indicator
-                            saved_title["val"] = self.title_lcd.toPlainText()
-                            self.title_lcd.setPlainText('Visualizer: loading')
+                            saved_title["val"] = self.time_lcd.toPlainText()
+                            self.time_lcd.setPlainText('Visualizer: loading')
                         except Exception:
                             pass
 
@@ -324,11 +316,11 @@ QSlider::handle:horizontal {{
                                 # restore previous title if available
                                 prev = saved_title.get("val")
                                 if prev is not None:
-                                    self.title_lcd.setPlainText(prev)
+                                    self.time_lcd.setPlainText(prev)
                                 else:
-                                    self.title_lcd.setPlainText('Visualizer ready')
+                                    self.time_lcd.setPlainText('Visualizer ready')
                             else:
-                                self.title_lcd.setPlainText('Visualizer failed')
+                                self.time_lcd.setPlainText('Visualizer failed')
                         except Exception:
                             pass
 
@@ -621,7 +613,7 @@ QSlider::handle:horizontal {{
             self.Player.setPosition(0)
             self.update_play_pause_icon()
             # Visual feedback - briefly show stop state
-            self.title_lcd.setPlainText("⏹ Stopped")
+            self.time_lcd.setPlainText("⏹ Stopped")
 
         self._hold_timer.timeout.connect(on_hold_timeout)
 
@@ -819,9 +811,9 @@ QSlider::handle:horizontal {{
                     pass
                 self._add_files(files, replace=True)
             else:
-                self.title_lcd.setPlainText('No audio files selected')
+                self.time_lcd.setPlainText('No audio files selected')
         except Exception as e:
-            self.title_lcd.setPlainText(f'Error: {e}')
+            self.time_lcd.setPlainText(f'Error: {e}')
 
     @log_call()
     def _on_youtube_click(self):
@@ -833,11 +825,11 @@ QSlider::handle:horizontal {{
             url = url.strip()
             yt_match = re.match(r"https?://(www\.)?(youtube\.com|youtu\.be)/.+", url)
             if not yt_match:
-                self.title_lcd.setPlainText("Invalid YouTube URL")
+                self.time_lcd.setPlainText("Invalid YouTube URL")
                 return
 
             output_dir = Path.home() / ".luister" / "downloads"
-            self.title_lcd.setPlainText("Fetching metadata...")
+            self.time_lcd.setPlainText("Fetching metadata...")
 
             # Show progress in playlist component
             if isinstance(self.ui, PlaylistUI):
@@ -857,13 +849,13 @@ QSlider::handle:horizontal {{
             self._yt_thread.finished.connect(self._on_ytdl_finished)
             self._yt_thread.start()
         except Exception as e:
-            self.title_lcd.setPlainText(f"Error starting YouTube download: {e}")
+            self.time_lcd.setPlainText(f"Error starting YouTube download: {e}")
 
     def _on_ytdl_metadata(self, items: list):  # noqa: D401
         """Handle metadata ready - add all items to playlist immediately."""
         self._yt_items_metadata = items
         count = len(items)
-        self.title_lcd.setPlainText(f"Found {count} item(s), starting downloads...")
+        self.time_lcd.setPlainText(f"Found {count} item(s), starting downloads...")
 
         if isinstance(self.ui, PlaylistUI):
             self.ui.update_download_progress(0, f"Downloading {count} item(s)...")
@@ -897,7 +889,7 @@ QSlider::handle:horizontal {{
         if isinstance(self.ui, PlaylistUI):
             self.ui.update_download_progress(overall_pct, f"Downloading ({item_idx + 1}/{total_items}): {item_title[:30]}... {pct}%")
 
-        self.title_lcd.setPlainText(f"Downloading ({item_idx + 1}/{total_items}): {pct}%")
+        self.time_lcd.setPlainText(f"Downloading ({item_idx + 1}/{total_items}): {pct}%")
 
     def _on_ytdl_item_complete(self, item_idx: int, file_path: str):  # noqa: D401
         """Handle individual item download complete."""
@@ -940,13 +932,13 @@ QSlider::handle:horizontal {{
         logging.info("YouTube download batch complete: %d files", file_count)
 
         if file_count > 0:
-            self.title_lcd.setPlainText(f"Downloaded {file_count} file(s)")
+            self.time_lcd.setPlainText(f"Downloaded {file_count} file(s)")
         else:
             # Check if we had metadata - if so, all downloads failed
             if hasattr(self, '_yt_items_metadata') and self._yt_items_metadata:
-                self.title_lcd.setPlainText("Downloads failed")
+                self.time_lcd.setPlainText("Downloads failed")
             else:
-                self.title_lcd.setPlainText("No items to download")
+                self.time_lcd.setPlainText("No items to download")
 
         # Clean up placeholder URLs (remove any that weren't successfully downloaded)
         # This handles cases where some items failed
@@ -1014,8 +1006,8 @@ QSlider::handle:horizontal {{
         self.time_slider.setRange(0, duration)
         #add duration to song title
         duration_list = convert_duration_to_show(duration)
-        text = self.title_lcd.toPlainText() + ' (' + duration_list[0] + ':' + duration_list[1] + ')'
-        self.title_lcd.setPlainText(text)
+        text = self.time_lcd.toPlainText() + ' (' + duration_list[0] + ':' + duration_list[1] + ')'
+        self.time_lcd.setPlainText(text)
 
     #set position played song
     def set_position(self, position):
@@ -1056,7 +1048,7 @@ QSlider::handle:horizontal {{
     def handle_errors(self):
         self.play_btn.setEnabled(False)
         if isinstance(self.ui, PlaylistUI):
-            self.title_lcd.setPlainText('Error' + str(self.Player.errorString()))
+            self.time_lcd.setPlainText('Error' + str(self.Player.errorString()))
 
     # ------- Playlist docking/toggle ---------
 
@@ -1180,7 +1172,7 @@ QSlider::handle:horizontal {{
 
             # update title display
             text = f"{self.current_index + 1}. {current_url.fileName()}"
-            self.title_lcd.setPlainText(text)
+            self.time_lcd.setPlainText(text)
             if isinstance(self.ui, PlaylistUI):
                 self.ui.time_song_text.setPlainText('00:00')
 
@@ -1299,40 +1291,34 @@ QSlider::handle:horizontal {{
         """
         try:
             w = self.width()
-            # Time slider: below time_lcd (y=120)
             left = 16
-            ts_y = 120
-            ts_h = 24
-            ts_w = max(200, w - 160)
+            slider_w = max(200, w - 32)  # Full width with margins
+
+            # Time display: full width
+            if hasattr(self, 'time_lcd') and self.time_lcd is not None:
+                try:
+                    self.time_lcd.setGeometry(left, 10, slider_w, 100)
+                except Exception:
+                    pass
+
+            # Time slider: below time_lcd (y=120), full width
             if hasattr(self, 'time_slider') and self.time_slider is not None:
                 try:
-                    self.time_slider.setGeometry(left, ts_y, ts_w, ts_h)
+                    self.time_slider.setGeometry(left, 120, slider_w, 24)
                 except Exception:
                     pass
 
-            # Title display: beside time_lcd (which is 300px wide)
-            title_x = 330
-            title_h = 100
-            title_w = max(120, w - 360)
-            if hasattr(self, 'title_lcd') and self.title_lcd is not None:
+            # Volume slider: below time_slider (y=150), full width
+            if hasattr(self, 'volume_slider') and self.volume_slider is not None:
                 try:
-                    self.title_lcd.setGeometry(title_x, 10, title_w, title_h)
+                    self.volume_slider.setGeometry(left, 150, slider_w, 20)
                 except Exception:
                     pass
-
-            # Volume slider: below title area
-            try:
-                vol_w = 120
-                vol_x = 330
-                if hasattr(self, 'volume_slider') and self.volume_slider is not None:
-                    self.volume_slider.setGeometry(vol_x, ts_y, vol_w, 20)
-            except Exception:
-                pass
 
             # Reflow control buttons (minimal 2-button set, equal size)
             gap = 12
             x = 16
-            y = 155  # Below slider
+            y = 180  # Below volume slider
             btn_size = 52
 
             # Position Open button
