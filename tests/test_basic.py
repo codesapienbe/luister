@@ -9,6 +9,5 @@ def test_import():
 
 def test_version():
     """Test version is defined."""
-    from luister import __version__ if hasattr(__import__('luister'), '__version__') else None
     # Version check is optional for now
     assert True
