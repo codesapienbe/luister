@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - CSNET
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - CSNET
   workflow_dispatch:
     inputs:
       version:
