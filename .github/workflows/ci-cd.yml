@@ -118,11 +118,12 @@ jobs:
             dist/Luister.exe
             dist/*Setup*.exe
 
-  # Build for Linux (only on tags)
+  # Build for Linux (disabled - PyTorch/CUDA bundling exceeds runner resources)
+  # TODO: Optimize by using CPU-only PyTorch or splitting the build
   build-linux:
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    if: false  # Disabled until optimized
     steps:
       - name: Free disk space
         run: |
@@ -194,7 +195,7 @@ jobs:
 
   # Create GitHub release (only on tags)
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -219,7 +220,5 @@ jobs:
           files: |
             artifacts/macos-build/*.dmg
             artifacts/windows-build/*.exe
-            artifacts/linux-build/*.AppImage
-            artifacts/linux-build/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
