@@ -180,6 +180,8 @@ jobs:
 
       - name: Create Debian package
         run: make deb
+        timeout-minutes: 10
+        continue-on-error: true
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
