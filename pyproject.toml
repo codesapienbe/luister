@@ -71,7 +71,7 @@ target-version = ['py38']
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
-qt_api = "pyqt5"
+qt_api = "pyqt6"
 
 [tool.setuptools.package-data]
 "luister" = ["*.ui", "img/*.png"]
