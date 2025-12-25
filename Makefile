@@ -21,7 +21,8 @@ PROJECT_NAME := luister
 VERSION := 0.1.0
 
 .PHONY: all clean install dev build build-mac build-windows build-linux \
-        dmg appimage deb installer run test lint help
+        dmg appimage deb installer run test lint help \
+        android-setup android-debug android-release android-deploy android-clean
 
 # Default target
 all: help
@@ -47,6 +48,13 @@ help:
 	@echo "  make appimage   - Create Linux AppImage (requires Linux)"
 	@echo "  make deb        - Create Debian package (requires Linux)"
 	@echo "  make installer  - Create Windows installer (requires Windows + NSIS)"
+	@echo ""
+	@echo "Android:"
+	@echo "  make android-setup   - Install Android build dependencies"
+	@echo "  make android-debug   - Build debug APK"
+	@echo "  make android-release - Build release APK"
+	@echo "  make android-deploy  - Deploy to connected device"
+	@echo "  make android-clean   - Clean Android build artifacts"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean      - Remove build artifacts"
@@ -140,3 +148,36 @@ dist: clean
 
 upload: dist
 	$(PYTHON) -m twine upload dist/*
+
+# Android build targets
+android-setup:
+	@echo "Setting up Android development environment..."
+	./scripts/setup-android-dev.sh
+
+android-debug:
+	@echo "Building Android debug APK..."
+	cd mobile && buildozer android debug
+	@echo ""
+	@echo "APK location: mobile/bin/"
+	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
+
+android-release:
+	@echo "Building Android release APK..."
+	cd mobile && buildozer android release
+	@echo ""
+	@echo "APK location: mobile/bin/"
+	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
+
+android-deploy:
+	@echo "Deploying to connected Android device..."
+	cd mobile && buildozer android deploy run logcat
+
+android-logcat:
+	@echo "Showing Android logcat (Ctrl+C to stop)..."
+	adb logcat | grep -i python
+
+android-clean:
+	@echo "Cleaning Android build artifacts..."
+	rm -rf mobile/.buildozer
+	rm -rf mobile/bin
+	@echo "Android build artifacts cleaned"
