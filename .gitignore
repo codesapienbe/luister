@@ -170,3 +170,9 @@ poetry.toml
 
 # End of https://www.toptal.com/developers/gitignore/api/python
 src/.DS_Store
+
+# Android / Buildozer
+mobile/.buildozer/
+mobile/bin/
+*.apk
+mobile/.DS_Store

@@ -150,27 +150,45 @@ upload: dist
 	$(PYTHON) -m twine upload dist/*
 
 # Android build targets
+# Android Gradle requires Java 17+
+JAVA17_HOME := $(shell \
+	if [ -n "$$JAVA_17_HOME" ] && [ -d "$$JAVA_17_HOME" ]; then echo "$$JAVA_17_HOME"; \
+	elif [ -d "/opt/homebrew/opt/openjdk@17" ]; then echo "/opt/homebrew/opt/openjdk@17"; \
+	else for d in $$HOME/.sdkman/candidates/java/17.*; do [ -d "$$d" ] && echo "$$d" && break; done; fi)
+
 android-setup:
 	@echo "Setting up Android development environment..."
 	./scripts/setup-android-dev.sh
 
 android-debug:
 	@echo "Building Android debug APK..."
-	cd mobile && buildozer android debug
+	@if [ -z "$(JAVA17_HOME)" ]; then \
+		echo "Error: Java 17 not found. Install with: sdk install java 17.0.8-tem"; \
+		exit 1; \
+	fi
+	cd mobile && VIRTUAL_ENV="$(CURDIR)/$(VENV)" PATH="../$(VENV)/bin:$$PATH" JAVA_HOME=$(JAVA17_HOME) ../$(VENV)/bin/python -m buildozer android debug
 	@echo ""
 	@echo "APK location: mobile/bin/"
 	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
 
 android-release:
 	@echo "Building Android release APK..."
-	cd mobile && buildozer android release
+	@if [ -z "$(JAVA17_HOME)" ]; then \
+		echo "Error: Java 17 not found. Install with: sdk install java 17.0.8-tem"; \
+		exit 1; \
+	fi
+	cd mobile && VIRTUAL_ENV="$(CURDIR)/$(VENV)" PATH="../$(VENV)/bin:$$PATH" JAVA_HOME=$(JAVA17_HOME) ../$(VENV)/bin/python -m buildozer android release
 	@echo ""
 	@echo "APK location: mobile/bin/"
 	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
 
 android-deploy:
 	@echo "Deploying to connected Android device..."
-	cd mobile && buildozer android deploy run logcat
+	@if [ -z "$(JAVA17_HOME)" ]; then \
+		echo "Error: Java 17 not found. Install with: sdk install java 17.0.8-tem"; \
+		exit 1; \
+	fi
+	cd mobile && VIRTUAL_ENV="$(CURDIR)/$(VENV)" PATH="../$(VENV)/bin:$$PATH" JAVA_HOME=$(JAVA17_HOME) ../$(VENV)/bin/python -m buildozer android deploy run logcat
 
 android-logcat:
 	@echo "Showing Android logcat (Ctrl+C to stop)..."

@@ -40,6 +40,11 @@ dependencies = [
     "Pillow>=9.0.0",
     "psutil>=5.9.0",
     "PySide6>=6.6.0",
+    # Android build dependencies
+    "pip>=23.0.0",
+    "buildozer>=1.5.0",
+    "cython>=0.29.0,<3.0.0",
+    "kivy>=2.3.0",
 ]
 
 [project.optional-dependencies]

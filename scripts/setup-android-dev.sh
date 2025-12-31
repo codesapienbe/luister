@@ -144,8 +144,39 @@ install_python_deps() {
     echo ""
     echo "Installing Python build dependencies..."
 
-    pip3 install --upgrade pip
-    pip3 install --upgrade buildozer cython virtualenv
+    # Check if we're in a virtual environment
+    if [[ -n "$VIRTUAL_ENV" ]]; then
+        echo -e "${GREEN}[OK]${NC} Virtual environment detected: $VIRTUAL_ENV"
+        # Ensure pip is available (may be missing in some venvs)
+        if ! python3 -m pip --version &> /dev/null; then
+            echo "Installing pip into virtual environment..."
+            python3 -m ensurepip --upgrade
+        fi
+        python3 -m pip install --upgrade pip
+        python3 -m pip install --upgrade buildozer cython
+    else
+        # Try to activate the project's venv
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+        VENV_PATH="$PROJECT_ROOT/.venv"
+
+        if [[ -f "$VENV_PATH/bin/activate" ]]; then
+            echo "Activating project virtual environment..."
+            source "$VENV_PATH/bin/activate"
+            python3 -m pip install --upgrade pip
+            python3 -m pip install --upgrade buildozer cython
+        else
+            echo -e "${YELLOW}[INFO]${NC} No virtual environment found."
+            echo "Creating virtual environment at $VENV_PATH..."
+            python3 -m venv "$VENV_PATH"
+            source "$VENV_PATH/bin/activate"
+            python3 -m pip install --upgrade pip
+            python3 -m pip install --upgrade buildozer cython
+            echo ""
+            echo -e "${YELLOW}[INFO]${NC} Activate the venv before building:"
+            echo "  source $VENV_PATH/bin/activate"
+        fi
+    fi
 
     echo -e "${GREEN}[OK]${NC} Python dependencies installed"
 }
