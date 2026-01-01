@@ -2,6 +2,12 @@
 Luister Mobile - Apple-inspired Crystal Glass Design
 Full-featured music player matching desktop functionality with premium UI
 """
+# pyright: reportOptionalMemberAccess=false
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportOptionalContextManager=false
+# pyright: reportCallIssue=false
+# pyright: reportIndexIssue=false
+# Kivy uses dynamic properties that static type checkers don't understand
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -58,6 +64,76 @@ except ImportError:
 
 
 # ============================================================================
+# ANDROID NATIVE AUDIO PLAYER (uses MediaPlayer for better format support)
+# ============================================================================
+class AndroidMediaPlayer:
+    """Wrapper for Android's native MediaPlayer - supports m4a, mp3, ogg, etc."""
+
+    def __init__(self, path: str):
+        from jnius import autoclass
+        self.MediaPlayer = autoclass('android.media.MediaPlayer')
+        self._player = self.MediaPlayer()
+        self._player.setDataSource(path)
+        self._player.prepare()
+        self._length = self._player.getDuration() / 1000.0  # Convert ms to seconds
+        self._volume = 1.0
+
+    @property
+    def length(self) -> float:
+        return self._length
+
+    @property
+    def volume(self) -> float:
+        return self._volume
+
+    @volume.setter
+    def volume(self, value: float):
+        self._volume = max(0.0, min(1.0, value))
+        self._player.setVolume(self._volume, self._volume)
+
+    def play(self):
+        self._player.start()
+
+    def stop(self):
+        if self._player.isPlaying():
+            self._player.pause()
+
+    def seek(self, position: float):
+        """Seek to position in seconds"""
+        self._player.seekTo(int(position * 1000))
+
+    def get_pos(self) -> float:
+        """Get current position in seconds"""
+        return self._player.getCurrentPosition() / 1000.0
+
+    def unload(self):
+        try:
+            self._player.stop()
+            self._player.release()
+        except Exception:
+            pass
+
+
+def load_audio(path: str, logger=None):
+    """Load audio file - uses Android MediaPlayer on Android, SoundLoader elsewhere"""
+    if platform == 'android':
+        try:
+            if logger:
+                logger(f'Using Android MediaPlayer')
+            player = AndroidMediaPlayer(path)
+            if logger:
+                logger(f'MediaPlayer ready: {player.length:.1f}s')
+            return player
+        except Exception as e:
+            if logger:
+                logger(f'MediaPlayer error: {e}')
+            # Don't fallback - Android MediaPlayer is preferred
+            return None
+    # Use Kivy SoundLoader on non-Android platforms
+    return SoundLoader.load(path)
+
+
+# ============================================================================
 # APPLE-INSPIRED CRYSTAL GLASS THEME COLORS
 # ============================================================================
 class Theme:
@@ -102,6 +178,161 @@ class Theme:
     SLIDER_FILL_START = get_color_from_hex('#007AFF')
     SLIDER_FILL_END = get_color_from_hex('#0066CC')
     SLIDER_HANDLE = (1, 1, 1, 0.95)                 # White handle
+
+
+# ============================================================================
+# ANIMATED SPLASH SCREEN
+# ============================================================================
+class SplashScreen(Screen):
+    """Animated splash screen with logo and app name"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Main layout
+        layout = FloatLayout()
+
+        # Background
+        with layout.canvas.before:
+            Color(*Theme.BG_PRIMARY)
+            self._bg = Rectangle(pos=layout.pos, size=layout.size)
+        layout.bind(pos=self._update_bg, size=self._update_bg)
+
+        # Logo container (centered)
+        self.logo_widget = Widget(
+            size_hint=(None, None),
+            size=(dp(120), dp(120)),
+            pos_hint={'center_x': 0.5, 'center_y': 0.55},
+            opacity=0
+        )
+
+        # Draw logo (stylized 'L' in a circle)
+        with self.logo_widget.canvas:
+            # Outer glow
+            Color(*Theme.ACCENT[:3], 0.15)
+            Ellipse(pos=(-dp(10), -dp(10)), size=(dp(140), dp(140)))
+
+            # Main circle with gradient effect
+            Color(*Theme.ACCENT)
+            Ellipse(pos=(0, 0), size=(dp(120), dp(120)))
+
+            # Inner highlight
+            Color(1, 1, 1, 0.2)
+            Ellipse(pos=(dp(10), dp(40)), size=(dp(80), dp(60)))
+
+            # Letter 'L' stylized
+            Color(1, 1, 1, 0.95)
+            # Vertical bar
+            RoundedRectangle(
+                pos=(dp(38), dp(25)),
+                size=(dp(14), dp(70)),
+                radius=[dp(4)]
+            )
+            # Horizontal bar
+            RoundedRectangle(
+                pos=(dp(38), dp(25)),
+                size=(dp(50), dp(14)),
+                radius=[dp(4)]
+            )
+
+        layout.add_widget(self.logo_widget)
+
+        # App name
+        self.app_name = Label(
+            text='Luister',
+            font_size=sp(36),
+            color=Theme.TEXT_PRIMARY,
+            bold=True,
+            pos_hint={'center_x': 0.5, 'center_y': 0.38},
+            opacity=0
+        )
+        layout.add_widget(self.app_name)
+
+        # Tagline
+        self.tagline = Label(
+            text='Music Player',
+            font_size=sp(16),
+            color=Theme.TEXT_SECONDARY,
+            pos_hint={'center_x': 0.5, 'center_y': 0.32},
+            opacity=0
+        )
+        layout.add_widget(self.tagline)
+
+        # Loading indicator dots
+        self.dots_label = Label(
+            text='',
+            font_size=sp(24),
+            color=Theme.ACCENT,
+            pos_hint={'center_x': 0.5, 'center_y': 0.18},
+            opacity=0
+        )
+        layout.add_widget(self.dots_label)
+
+        self.add_widget(layout)
+
+        # Animation state
+        self._dot_count = 0
+        self._dot_event = None
+
+    def _update_bg(self, *args):
+        self._bg.pos = self.pos
+        self._bg.size = self.size
+
+    def on_enter(self):
+        """Start animations when screen is shown"""
+        # Reset state
+        self.logo_widget.opacity = 0
+        self.app_name.opacity = 0
+        self.tagline.opacity = 0
+        self.dots_label.opacity = 0
+
+        # Logo animation: fade in + scale effect (simulated via opacity)
+        logo_anim = Animation(opacity=1, duration=0.6, t='out_cubic')
+        logo_anim.start(self.logo_widget)
+
+        # Pulse animation for logo
+        def pulse_logo(dt):
+            if self.logo_widget.opacity > 0:
+                pulse = Animation(opacity=0.85, duration=0.8) + Animation(opacity=1, duration=0.8)
+                pulse.repeat = True
+                pulse.start(self.logo_widget)
+        Clock.schedule_once(pulse_logo, 0.8)
+
+        # App name fade in (delayed)
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.5).start(self.app_name), 0.4)
+
+        # Tagline fade in (more delayed)
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.5).start(self.tagline), 0.6)
+
+        # Loading dots
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.3).start(self.dots_label), 0.8)
+        self._dot_event = Clock.schedule_interval(self._animate_dots, 0.4)
+
+        # Transition to main screen after delay
+        Clock.schedule_once(self._go_to_main, 2.5)
+
+    def _animate_dots(self, dt):
+        self._dot_count = (self._dot_count + 1) % 4
+        self.dots_label.text = '.' * self._dot_count if self._dot_count > 0 else ''
+
+    def _go_to_main(self, dt):
+        if self._dot_event:
+            self._dot_event.cancel()
+
+        # Fade out everything
+        fade_out = Animation(opacity=0, duration=0.3)
+        fade_out.start(self.logo_widget)
+        fade_out.start(self.app_name)
+        fade_out.start(self.tagline)
+        fade_out.start(self.dots_label)
+
+        # Switch screen
+        def switch(dt):
+            app = App.get_running_app()
+            if app and app.root:
+                app.root.transition.duration = 0.5
+                app.root.current = 'main'
+        Clock.schedule_once(switch, 0.35)
 
 
 # ============================================================================
@@ -212,65 +443,73 @@ class GlassPanel(Widget):
 
 
 class IconButton(ButtonBehavior, Widget):
-    """Custom circular button with icon drawing"""
+    """Custom circular button with icon drawing and press feedback"""
 
     icon = StringProperty('play')  # play, pause, prev, next, shuffle, loop, folder, youtube
     is_accent = BooleanProperty(False)  # Use accent color background
     is_active = BooleanProperty(False)  # Toggle state
     icon_color = ColorProperty([1, 1, 1, 0.95])
+    press_opacity = NumericProperty(1.0)  # Opacity for press feedback
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._pressed = False
-        self._hover = False
+        self._press_anim = None
         self.bind(pos=self._draw, size=self._draw, icon=self._draw,
-                  is_accent=self._draw, is_active=self._draw)
+                  is_accent=self._draw, is_active=self._draw, press_opacity=self._draw)
         Clock.schedule_once(lambda dt: self._draw())
 
     def on_press(self):
         self._pressed = True
-        self._draw()
+        # Cancel any running animation
+        if self._press_anim:
+            self._press_anim.cancel(self)
+        # Dim on press
+        self._press_anim = Animation(press_opacity=0.6, duration=0.08, t='out_quad')
+        self._press_anim.start(self)
 
     def on_release(self):
         self._pressed = False
-        self._draw()
+        # Cancel any running animation
+        if self._press_anim:
+            self._press_anim.cancel(self)
+        # Bounce back to full brightness
+        self._press_anim = Animation(press_opacity=1.0, duration=0.15, t='out_quad')
+        self._press_anim.start(self)
 
     def _draw(self, *args):
         self.canvas.clear()
         with self.canvas:
-            # Calculate dimensions
+            # Calculate dimensions (no scaling - positions stay fixed)
             size = min(self.width, self.height)
             cx, cy = self.center_x, self.center_y
             radius = size / 2
 
             # Draw shadow
-            Color(0, 0, 0, 0.15)
+            Color(0, 0, 0, 0.15 * self.press_opacity)
             Ellipse(pos=(cx - radius + dp(1), cy - radius - dp(1)), size=(size, size))
 
-            # Draw button background
+            # Draw button background with press feedback
             if self.is_accent or self.is_active:
-                if self._pressed:
-                    Color(*Theme.ACCENT_PRESSED)
-                else:
-                    Color(*Theme.ACCENT)
+                r, g, b = Theme.ACCENT[:3]
+                Color(r * self.press_opacity, g * self.press_opacity, b * self.press_opacity, 1)
             else:
-                if self._pressed:
-                    Color(0.22, 0.22, 0.23, 0.95)
-                else:
-                    Color(*Theme.BTN_DARK_BG)
+                r, g, b, a = Theme.BTN_DARK_BG
+                Color(r * self.press_opacity, g * self.press_opacity, b * self.press_opacity, a)
 
             Ellipse(pos=(cx - radius, cy - radius), size=(size, size))
 
             # Draw border
             if not self.is_accent and not self.is_active:
-                Color(*Theme.BTN_BORDER)
+                Color(1, 1, 1, 0.1 * self.press_opacity)
                 Line(circle=(cx, cy, radius), width=1)
 
-            # Draw icon
+            # Draw icon with press feedback
             if self.is_accent or self.is_active:
-                Color(1, 1, 1, 0.95)
+                Color(1, 1, 1, 0.95 * self.press_opacity)
             else:
-                Color(*Theme.TEXT_PRIMARY)
+                r, g, b, a = Theme.TEXT_PRIMARY
+                Color(r, g, b, a * self.press_opacity)
 
             icon_size = size * 0.4
             self._draw_icon(cx, cy, icon_size)
@@ -469,6 +708,8 @@ class GestureButton(IconButton):
             self._touch_start = touch.pos
             self._touch_start_time = Clock.get_time()
             self._hold_triggered = False
+            # Trigger press animation
+            self.on_press()
             # Schedule long press detection
             self._hold_event = Clock.schedule_once(self._on_long_press, 0.5)
             return True
@@ -489,6 +730,9 @@ class GestureButton(IconButton):
             if self._hold_event:
                 self._hold_event.cancel()
                 self._hold_event = None
+
+            # Trigger release animation
+            self.on_release()
 
             if self._hold_triggered:
                 self._touch_start = None
@@ -1041,32 +1285,57 @@ class MainScreen(Screen):
         self.controls = PlayerControls(size_hint=(1, 0.14))
         layout.add_widget(self.controls)
 
-        # Bottom action buttons
-        bottom_layout = BoxLayout(size_hint=(1, 0.12), spacing=dp(16), padding=[dp(8), dp(8)])
+        # Bottom action buttons (centered with consistent sizing)
+        bottom_layout = BoxLayout(size_hint=(1, 0.12), spacing=dp(24), padding=[dp(16), dp(8)])
+
+        # Left spacer for centering
+        bottom_layout.add_widget(Widget(size_hint=(1, 1)))
 
         self.playlist_btn = IconButton(
             icon='list',
-            size_hint=(1, 1)
+            size_hint=(None, 1),
+            width=dp(56)
         )
         self.playlist_btn.bind(on_release=self.open_playlist)
         bottom_layout.add_widget(self.playlist_btn)
 
         self.open_btn = IconButton(
             icon='folder',
-            size_hint=(1, 1)
+            size_hint=(None, 1),
+            width=dp(56)
         )
         self.open_btn.bind(on_release=self.open_folder)
         bottom_layout.add_widget(self.open_btn)
 
         self.youtube_btn = IconButton(
             icon='youtube',
-            size_hint=(1, 1)
+            size_hint=(None, 1),
+            width=dp(56)
         )
         self.youtube_btn.bind(on_release=self.open_youtube)
         bottom_layout.add_widget(self.youtube_btn)
 
+        # Right spacer for centering
+        bottom_layout.add_widget(Widget(size_hint=(1, 1)))
+
         layout.add_widget(bottom_layout)
         main_box.add_widget(layout)
+
+        # Debug footer (one-liner status bar)
+        self.debug_label = Label(
+            text='Ready',
+            size_hint=(1, None),
+            height=dp(24),
+            font_size=sp(11),
+            color=Theme.TEXT_TERTIARY,
+            halign='center',
+            valign='middle',
+            shorten=True,
+            shorten_from='left'
+        )
+        self.debug_label.bind(width=lambda *x: setattr(self.debug_label, 'text_size', (self.debug_label.width, None)))
+        main_box.add_widget(self.debug_label)
+
         self.add_widget(main_box)
 
     def _update_bg(self, *args):
@@ -1359,11 +1628,24 @@ class LuisterApp(App):
         self._update_event = None
         self._download_thread: Optional[threading.Thread] = None
 
+    def log(self, msg: str):
+        """Update debug footer with a message (thread-safe)"""
+        def update(dt):
+            if hasattr(self, 'main_screen') and hasattr(self.main_screen, 'debug_label'):
+                self.main_screen.debug_label.text = str(msg)[:100]
+        Clock.schedule_once(update, 0)
+
     def build(self):
         self.title = 'Luister'
         Window.clearcolor = Theme.BG_PRIMARY
 
-        sm = ScreenManager()
+        from kivy.uix.screenmanager import FadeTransition
+        sm = ScreenManager(transition=FadeTransition(duration=0.5))
+
+        # Add splash screen first (initial screen)
+        self.splash_screen = SplashScreen(name='splash')
+        sm.add_widget(self.splash_screen)
+
         self.main_screen = MainScreen(name='main')
         self.playlist_screen = PlaylistScreen(name='playlist')
 
@@ -1420,7 +1702,7 @@ class LuisterApp(App):
 
         music_dirs.append(str(self.config_manager.downloads_dir))
 
-        audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm'}
+        audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus'}
         found_files: List[str] = []
 
         for music_dir in music_dirs:
@@ -1453,14 +1735,14 @@ class LuisterApp(App):
             filechooser.open_file(
                 on_selection=self._on_files_selected,
                 multiple=True,
-                filters=[('Audio Files', '*.mp3', '*.wav', '*.ogg', '*.m4a', '*.flac')]
+                filters=[('Audio Files', '*.mp3', '*.wav', '*.ogg', '*.m4a', '*.flac', '*.opus', '*.webm', '*.aac')]
             )
         except Exception as e:
             self.main_screen.title_label.text = f'Error: {str(e)[:30]}'
 
     def _on_files_selected(self, selection):
         if selection:
-            audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm'}
+            audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus'}
             valid_files = [f for f in selection if Path(f).suffix.lower() in audio_exts]
 
             if valid_files:
@@ -1475,7 +1757,11 @@ class LuisterApp(App):
     def _update_position(self, dt):
         if self.sound and self.is_playing:
             try:
-                pos = self.sound.get_pos() or 0
+                # Handle both AndroidMediaPlayer (get_pos) and Kivy Sound (.pos)
+                if hasattr(self.sound, 'get_pos'):
+                    pos = self.sound.get_pos() or 0
+                else:
+                    pos = self.sound.pos or 0
                 length = self.sound.length or 1
                 self.main_screen.update_position(pos, length)
                 self.main_screen.visualizer.update_position(pos * 1000)
@@ -1486,21 +1772,27 @@ class LuisterApp(App):
                 pass
 
     def load_track(self, path: str) -> bool:
+        self.log(f'Loading: {Path(path).name}')
+
         if self.sound:
             self.sound.stop()
             self.sound.unload()
             self.sound = None
 
         try:
-            self.sound = SoundLoader.load(path)
+            self.sound = load_audio(path, logger=self.log)
             if self.sound:
                 title = Path(path).stem
-                self.main_screen.update_track_info(title, self.sound.length or 0)
+                duration = self.sound.length or 0
+                self.log(f'Loaded: {title} ({duration:.1f}s)')
+                self.main_screen.update_track_info(title, duration)
                 self.sound.volume = self.config_manager.volume
                 self.main_screen.visualizer.set_audio(path)
                 return True
-        except Exception:
-            pass
+            else:
+                self.log(f'Audio load failed: {Path(path).suffix}')
+        except Exception as e:
+            self.log(f'Load error: {e}')
         return False
 
     def toggle_play(self):
@@ -1603,19 +1895,24 @@ class LuisterApp(App):
         popup.open()
 
     def download_youtube(self, url: str, popup: YouTubeDownloadPopup):
+        app = self
 
         def download_task():
+            app.log('Importing yt-dlp...')
             try:
                 import yt_dlp
-            except ImportError:
+            except ImportError as e:
+                app.log(f'Import error: {e}')
                 Clock.schedule_once(
                     lambda dt: popup.download_complete(False, 'yt-dlp not installed'), 0
                 )
                 return
 
             try:
+                app.log('Starting download...')
                 output_dir = self.config_manager.downloads_dir
                 output_dir.mkdir(parents=True, exist_ok=True)
+                app.log(f'Output: {output_dir}')
 
                 def progress_hook(d):
                     if d.get('status') == 'downloading':
@@ -1623,34 +1920,56 @@ class LuisterApp(App):
                         downloaded = d.get('downloaded_bytes', 0)
                         if total and total > 0:
                             pct = int((downloaded / total) * 100)
+                            app.log(f'Downloading: {pct}%')
                             Clock.schedule_once(
                                 lambda dt, p=pct: popup.update_progress(p, f'Downloading... {p}%'), 0
                             )
                     elif d.get('status') == 'finished':
+                        app.log('Download finished, processing...')
                         Clock.schedule_once(
                             lambda dt: popup.update_progress(100, 'Processing...'), 0
                         )
 
+                # Custom logger to route yt-dlp messages to debug footer
+                class DebugLogger:
+                    def debug(self, msg): app.log(f'[D] {msg}')
+                    def info(self, msg): app.log(f'[I] {msg}')
+                    def warning(self, msg): app.log(f'[W] {msg}')
+                    def error(self, msg): app.log(f'[E] {msg}')
+
+                # Audio formats supported by Kivy (no FFmpeg needed)
+                audio_extensions = ('*.m4a', '*.mp3', '*.ogg', '*.opus', '*.webm', '*.wav', '*.aac')
+
                 ydl_opts = {
-                    'format': 'bestaudio/best',
+                    # Prefer m4a (AAC) which Kivy can play, fallback to best audio
+                    'format': 'bestaudio[ext=m4a]/bestaudio/best',
                     'outtmpl': str(output_dir / '%(title)s.%(ext)s'),
                     'progress_hooks': [progress_hook],
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
+                    # No postprocessors - avoid FFmpeg dependency
                     'quiet': True,
                     'no_warnings': True,
+                    'logger': DebugLogger(),
+                    'noprogress': True,
+                    # Avoid external calls
+                    'no_check_certificates': True,
+                    'prefer_insecure': True,
                 }
 
-                before_files = set(output_dir.glob("*.mp3"))
+                # Get all audio files before download
+                before_files: set = set()
+                for ext in audio_extensions:
+                    before_files.update(output_dir.glob(ext))
+                app.log('Calling yt-dlp (no FFmpeg)...')
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
 
-                after_files = set(output_dir.glob("*.mp3"))
+                # Get all audio files after download
+                after_files: set = set()
+                for ext in audio_extensions:
+                    after_files.update(output_dir.glob(ext))
                 new_files = list(after_files - before_files)
+                app.log(f'Found {len(new_files)} new file(s)')
 
                 if new_files:
                     for f in new_files:
@@ -1660,20 +1979,23 @@ class LuisterApp(App):
                     def update_ui():
                         self.playlist_screen.refresh_playlist(self.playlist, self.current_index)
                         popup.download_complete(True, f'Downloaded {len(new_files)} file(s)')
+                        app.log(f'Done: {new_files[0].name if new_files else ""}')
 
                         if len(new_files) > 0 and not self.is_playing:
                             self.play_index(0)
 
                     Clock.schedule_once(lambda dt: update_ui(), 0)
                 else:
+                    app.log('No audio files found after download')
                     Clock.schedule_once(
                         lambda dt: popup.download_complete(False, 'No files downloaded'), 0
                     )
 
             except Exception as e:
-                error_msg = str(e)[:50]
+                error_msg = str(e)
+                app.log(f'Error: {error_msg}')
                 Clock.schedule_once(
-                    lambda dt: popup.download_complete(False, f'Error: {error_msg}'), 0
+                    lambda dt: popup.download_complete(False, f'Error: {error_msg[:50]}'), 0
                 )
 
         self._download_thread = threading.Thread(target=download_task, daemon=True)
