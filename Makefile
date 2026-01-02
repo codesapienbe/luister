@@ -252,11 +252,12 @@ ios-build:
 		exit 1; \
 	fi
 	@mkdir -p $(IOS_DIR)
+	@echo "Note: iOS build uses urllib instead of requests (no recipe available)"
 ifdef UV
-	cd $(IOS_DIR) && uv run toolchain build python3 kivy numpy requests
+	cd $(IOS_DIR) && uv run toolchain build python3 kivy numpy
 	cd $(IOS_DIR) && uv run toolchain create Luister ../mobile
 else
-	cd $(IOS_DIR) && $(PYTHON) -m toolchain build python3 kivy numpy requests
+	cd $(IOS_DIR) && $(PYTHON) -m toolchain build python3 kivy numpy
 	cd $(IOS_DIR) && $(PYTHON) -m toolchain create Luister ../mobile
 endif
 	@echo ""

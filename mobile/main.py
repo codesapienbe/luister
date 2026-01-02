@@ -62,6 +62,60 @@ try:
 except ImportError:
     HAS_FILECHOOSER = False
 
+# Try to import requests, fall back to urllib for iOS
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+    import urllib.request
+    import urllib.parse
+    import urllib.error
+    import json as json_module
+
+
+def http_get(url: str, headers: dict = None, timeout: int = 10) -> tuple:
+    """HTTP GET request using requests or urllib fallback. Returns (status_code, json_data or None)"""
+    if HAS_REQUESTS:
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            return response.status_code, response.json() if response.status_code == 200 else None
+        except Exception:
+            return 0, None
+    else:
+        try:
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                data = json_module.loads(response.read().decode('utf-8'))
+                return 200, data
+        except urllib.error.HTTPError as e:
+            return e.code, None
+        except Exception:
+            return 0, None
+
+
+def http_post_file(url: str, headers: dict, file_path: str, file_field: str, data: dict, timeout: int = 120) -> tuple:
+    """HTTP POST with file upload. Returns (status_code, json_data or None)"""
+    if HAS_REQUESTS:
+        try:
+            with open(file_path, 'rb') as f:
+                files = {file_field: (Path(file_path).name, f, 'audio/mpeg')}
+                response = requests.post(url, headers=headers, files=files, data=data, timeout=timeout)
+                return response.status_code, response.json() if response.status_code == 200 else response.json()
+        except Exception as e:
+            return 0, {'error': {'message': str(e)}}
+    else:
+        # urllib multipart upload is complex, return error for iOS
+        return 0, {'error': {'message': 'File upload not supported on iOS. Use desktop app.'}}
+
+
+def url_quote(s: str) -> str:
+    """URL-encode a string"""
+    if HAS_REQUESTS:
+        return requests.utils.quote(s)
+    else:
+        return urllib.parse.quote(s)
+
 
 # ============================================================================
 # ANDROID NATIVE AUDIO PLAYER (uses MediaPlayer for better format support)
@@ -2616,8 +2670,6 @@ class LuisterApp(App):
         def fetch_task():
             app.log(f'Fetching lyrics for: {song_title}')
             try:
-                import requests
-
                 # Clean up song title for search
                 # Remove common patterns like "(Official Video)", "[Lyrics]", etc.
                 import re
@@ -2641,10 +2693,9 @@ class LuisterApp(App):
 
                 if artist:
                     try:
-                        url = f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}"
-                        response = requests.get(url, timeout=10)
-                        if response.status_code == 200:
-                            data = response.json()
+                        url = f"https://api.lyrics.ovh/v1/{url_quote(artist)}/{url_quote(title)}"
+                        status, data = http_get(url, timeout=10)
+                        if status == 200 and data:
                             lyrics_text = data.get('lyrics', '')
                     except Exception as e:
                         app.log(f'lyrics.ovh error: {e}')
@@ -2653,15 +2704,13 @@ class LuisterApp(App):
                 if not lyrics_text:
                     try:
                         # lrclib provides synced lyrics
-                        search_url = f"https://lrclib.net/api/search?q={requests.utils.quote(clean_title)}"
-                        response = requests.get(search_url, timeout=10, headers={'User-Agent': 'Luister/1.0'})
-                        if response.status_code == 200:
-                            results = response.json()
-                            if results:
-                                # Get synced lyrics if available, else plain
-                                best = results[0]
-                                lyrics_text = best.get('syncedLyrics') or best.get('plainLyrics', '')
-                                app.log(f'Found on lrclib: {best.get("trackName", "")}')
+                        search_url = f"https://lrclib.net/api/search?q={url_quote(clean_title)}"
+                        status, results = http_get(search_url, headers={'User-Agent': 'Luister/1.0'}, timeout=10)
+                        if status == 200 and results:
+                            # Get synced lyrics if available, else plain
+                            best = results[0]
+                            lyrics_text = best.get('syncedLyrics') or best.get('plainLyrics', '')
+                            app.log(f'Found on lrclib: {best.get("trackName", "")}')
                     except Exception as e:
                         app.log(f'lrclib error: {e}')
 
@@ -2701,8 +2750,6 @@ class LuisterApp(App):
                 return
 
             try:
-                import requests
-
                 Clock.schedule_once(
                     lambda dt: setattr(popup.status_label, 'text', 'Uploading audio...'), 0
                 )
@@ -2710,30 +2757,24 @@ class LuisterApp(App):
                 # Use OpenAI Whisper API
                 app.log('Using OpenAI Whisper API...')
 
-                # Read audio file
-                with open(file_path, 'rb') as audio_file:
-                    # OpenAI Whisper API endpoint
-                    url = 'https://api.openai.com/v1/audio/transcriptions'
-                    headers = {
-                        'Authorization': f'Bearer {api_key}'
-                    }
-                    files = {
-                        'file': (Path(file_path).name, audio_file, 'audio/mpeg')
-                    }
-                    data = {
-                        'model': 'whisper-1',
-                        'response_format': 'verbose_json',
-                        'timestamp_granularities[]': 'segment'
-                    }
+                # OpenAI Whisper API endpoint
+                url = 'https://api.openai.com/v1/audio/transcriptions'
+                headers = {
+                    'Authorization': f'Bearer {api_key}'
+                }
+                data = {
+                    'model': 'whisper-1',
+                    'response_format': 'verbose_json',
+                    'timestamp_granularities[]': 'segment'
+                }
 
-                    Clock.schedule_once(
-                        lambda dt: setattr(popup.status_label, 'text', 'Transcribing...'), 0
-                    )
+                Clock.schedule_once(
+                    lambda dt: setattr(popup.status_label, 'text', 'Transcribing...'), 0
+                )
 
-                    response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
+                status_code, result = http_post_file(url, headers, file_path, 'file', data, timeout=120)
 
-                if response.status_code == 200:
-                    result = response.json()
+                if status_code == 200 and result:
                     segments = result.get('segments', [])
 
                     if segments:
@@ -2759,13 +2800,9 @@ class LuisterApp(App):
                         )
                 else:
                     # API error
-                    error_msg = f'API error: {response.status_code}'
-                    try:
-                        error_data = response.json()
-                        if 'error' in error_data:
-                            error_msg = error_data['error'].get('message', error_msg)[:60]
-                    except Exception:
-                        pass
+                    error_msg = f'API error: {status_code}'
+                    if result and 'error' in result:
+                        error_msg = result['error'].get('message', error_msg)[:60]
                     app.log(f'Transcription failed: {error_msg}')
                     Clock.schedule_once(
                         lambda dt: popup.update_lyrics('', error_msg), 0
