@@ -104,7 +104,17 @@ class AndroidMediaPlayer:
 
     def get_pos(self) -> float:
         """Get current position in seconds"""
-        return self._player.getCurrentPosition() / 1000.0
+        try:
+            return self._player.getCurrentPosition() / 1000.0
+        except Exception:
+            return 0.0
+
+    def is_playing(self) -> bool:
+        """Check if player is actually playing"""
+        try:
+            return self._player.isPlaying()
+        except Exception:
+            return False
 
     def unload(self):
         try:
@@ -1426,8 +1436,11 @@ class MainScreen(Screen):
 
     def update_lyrics(self, current_line: str, next_line: str = ''):
         """Update the lyrics display with current and next lines"""
-        self.lyrics_current.text = current_line
-        self.lyrics_next.text = next_line
+        # Schedule on main thread to avoid any threading issues
+        def _update(dt):
+            self.lyrics_current.text = current_line
+            self.lyrics_next.text = next_line
+        Clock.schedule_once(_update, 0)
 
 
 class PlaylistScreen(Screen):
@@ -1802,13 +1815,18 @@ class LyricsPopup(Popup):
         layout.add_widget(scroll_container)
 
         # Action buttons
-        btn_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(16))
+        btn_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(12))
         btn_layout.add_widget(Widget(size_hint=(1, 1)))
 
-        # Fetch button
+        # Fetch button (search online)
         self.fetch_btn = IconButton(icon='scan', is_accent=True, size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         self.fetch_btn.bind(on_release=self.fetch_lyrics)
         btn_layout.add_widget(self.fetch_btn)
+
+        # Transcribe button (local AI transcription)
+        self.transcribe_btn = IconButton(icon='play', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
+        self.transcribe_btn.bind(on_release=self.transcribe_lyrics)
+        btn_layout.add_widget(self.transcribe_btn)
 
         # Save button (save synced lyrics)
         self.save_btn = IconButton(icon='folder', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
@@ -1849,6 +1867,7 @@ class LyricsPopup(Popup):
         self.lyrics_label.text = lyrics
         self.status_label.text = status
         self.fetch_btn.disabled = False
+        self.transcribe_btn.disabled = False
         if lyrics:
             self.save_btn.disabled = False
 
@@ -1870,6 +1889,15 @@ class LyricsPopup(Popup):
                 Clock.schedule_once(go_back, 0.8)
             else:
                 self.status_label.text = 'Failed to save lyrics'
+
+    def transcribe_lyrics(self, instance):
+        """Transcribe lyrics using Whisper AI"""
+        self.transcribe_btn.disabled = True
+        self.status_label.text = 'Starting transcription...'
+
+        app = App.get_running_app()
+        if app:
+            app.transcribe_lyrics(self.file_path, self)
 
 
 # ============================================================================
@@ -2025,6 +2053,13 @@ class LuisterApp(App):
     def _update_position(self, dt):
         if self.sound and self.is_playing:
             try:
+                # Check if player actually stopped (Android MediaPlayer issue detection)
+                if hasattr(self.sound, 'is_playing'):
+                    if not self.sound.is_playing():
+                        self.log('Player stopped unexpectedly - restarting')
+                        self.sound.play()
+                        return
+
                 # Handle both AndroidMediaPlayer (get_pos) and Kivy Sound (.pos)
                 if hasattr(self.sound, 'get_pos'):
                     pos = self.sound.get_pos() or 0
@@ -2038,9 +2073,10 @@ class LuisterApp(App):
                 self.update_lyrics_display(pos)
 
                 if pos >= length - 0.5:
+                    self.log(f'End of track at {pos:.1f}/{length:.1f}')
                     self.next_track()
-            except Exception:
-                pass
+            except Exception as e:
+                self.log(f'Position update error: {e}')
 
     def load_track(self, path: str) -> bool:
         self.log(f'Loading: {Path(path).name}')
@@ -2359,6 +2395,7 @@ class LuisterApp(App):
         self._current_lyrics = []
         self._current_lyrics_index = -1
         self._plain_lyrics_lines = []
+        self._plain_lyrics_index = -1
 
         if self.current_index < 0 or self.current_index >= len(self.playlist):
             return
@@ -2382,46 +2419,49 @@ class LuisterApp(App):
 
     def update_lyrics_display(self, position: float):
         """Update lyrics display based on current playback position"""
-        # Handle synced LRC lyrics
-        if self._current_lyrics:
-            # Find the current lyrics line based on position
-            current_idx = -1
-            for i, (timestamp, _) in enumerate(self._current_lyrics):
-                if timestamp <= position:
-                    current_idx = i
-                else:
-                    break
+        try:
+            # Handle synced LRC lyrics
+            if self._current_lyrics:
+                # Find the current lyrics line based on position
+                current_idx = -1
+                for i, (timestamp, _) in enumerate(self._current_lyrics):
+                    if timestamp <= position:
+                        current_idx = i
+                    else:
+                        break
 
-            # Only update if changed
-            if current_idx != self._current_lyrics_index:
-                self._current_lyrics_index = current_idx
+                # Only update if changed
+                if current_idx != self._current_lyrics_index:
+                    self._current_lyrics_index = current_idx
 
-                if current_idx >= 0:
-                    current_text = self._current_lyrics[current_idx][1]
+                    if current_idx >= 0:
+                        current_text = self._current_lyrics[current_idx][1]
+                        next_text = ''
+                        if current_idx + 1 < len(self._current_lyrics):
+                            next_text = self._current_lyrics[current_idx + 1][1]
+                        self.main_screen.update_lyrics(current_text, next_text)
+                    else:
+                        # Before first lyrics line
+                        self.main_screen.update_lyrics('', self._current_lyrics[0][1])
+                return
+
+            # Handle plain text lyrics (scroll based on song duration)
+            if self._plain_lyrics_lines and self.sound and self.sound.length:
+                total_lines = len(self._plain_lyrics_lines)
+                duration = self.sound.length
+                # Calculate which line should be shown based on position
+                line_idx = int((position / duration) * total_lines)
+                line_idx = max(0, min(line_idx, total_lines - 1))
+
+                if line_idx != self._plain_lyrics_index:
+                    self._plain_lyrics_index = line_idx
+                    current_text = self._plain_lyrics_lines[line_idx]
                     next_text = ''
-                    if current_idx + 1 < len(self._current_lyrics):
-                        next_text = self._current_lyrics[current_idx + 1][1]
+                    if line_idx + 1 < total_lines:
+                        next_text = self._plain_lyrics_lines[line_idx + 1]
                     self.main_screen.update_lyrics(current_text, next_text)
-                else:
-                    # Before first lyrics line
-                    self.main_screen.update_lyrics('', self._current_lyrics[0][1])
-            return
-
-        # Handle plain text lyrics (scroll based on song duration)
-        if self._plain_lyrics_lines and self.sound and self.sound.length:
-            total_lines = len(self._plain_lyrics_lines)
-            duration = self.sound.length
-            # Calculate which line should be shown based on position
-            line_idx = int((position / duration) * total_lines)
-            line_idx = max(0, min(line_idx, total_lines - 1))
-
-            if line_idx != self._plain_lyrics_index:
-                self._plain_lyrics_index = line_idx
-                current_text = self._plain_lyrics_lines[line_idx]
-                next_text = ''
-                if line_idx + 1 < total_lines:
-                    next_text = self._plain_lyrics_lines[line_idx + 1]
-                self.main_screen.update_lyrics(current_text, next_text)
+        except Exception as e:
+            self.log(f'Lyrics display error: {e}')
 
     def fetch_lyrics(self, song_title: str, popup: 'LyricsPopup'):
         """Fetch lyrics from online API (runs in background thread)"""
@@ -2485,7 +2525,7 @@ class LuisterApp(App):
                     )
                 else:
                     Clock.schedule_once(
-                        lambda dt: popup.update_lyrics('', 'No lyrics found'), 0
+                        lambda dt: popup.update_lyrics('', 'No lyrics found. Try Transcribe button.'), 0
                     )
 
             except Exception as e:
@@ -2495,6 +2535,90 @@ class LuisterApp(App):
                 )
 
         threading.Thread(target=fetch_task, daemon=True).start()
+
+    def transcribe_lyrics(self, file_path: str, popup: 'LyricsPopup'):
+        """Transcribe lyrics using Whisper AI (runs in background thread)"""
+        app = self
+
+        def transcribe_task():
+            app.log(f'Transcribing: {Path(file_path).name}')
+
+            # Check for cached transcription
+            audio_path = Path(file_path)
+            cache_path = app.get_lyrics_path(file_path)
+
+            # Try to import whisper
+            try:
+                import whisper
+                whisper_available = True
+            except ImportError:
+                whisper_available = False
+                app.log('Whisper not installed')
+
+            if not whisper_available:
+                Clock.schedule_once(
+                    lambda dt: popup.update_lyrics(
+                        '',
+                        'Whisper not available. Add "openai-whisper" to requirements.'
+                    ), 0
+                )
+                return
+
+            try:
+                # Load model (tiny for mobile to save memory)
+                app.log('Loading Whisper model (tiny)...')
+                Clock.schedule_once(
+                    lambda dt: setattr(popup, 'status_label', popup.status_label) or
+                    setattr(popup.status_label, 'text', 'Loading AI model...'), 0
+                )
+
+                model_dir = app.config_manager._config_dir / "models"
+                model_dir.mkdir(parents=True, exist_ok=True)
+
+                try:
+                    model = whisper.load_model("tiny", download_root=str(model_dir))
+                except TypeError:
+                    model = whisper.load_model("tiny")
+
+                app.log('Model loaded, transcribing...')
+                Clock.schedule_once(
+                    lambda dt: setattr(popup.status_label, 'text', 'Transcribing audio...'), 0
+                )
+
+                # Transcribe
+                result = model.transcribe(file_path, language=None)  # Auto-detect language
+
+                # Extract segments and format as LRC
+                segments = result.get('segments', [])
+                if segments:
+                    lrc_lines = []
+                    for seg in segments:
+                        start = seg.get('start', 0)
+                        text = seg.get('text', '').strip()
+                        if text:
+                            mins = int(start // 60)
+                            secs = start % 60
+                            lrc_lines.append(f'[{mins:02d}:{secs:05.2f}]{text}')
+
+                    lyrics_text = '\n'.join(lrc_lines)
+                    app.log(f'Transcribed {len(segments)} segments')
+
+                    Clock.schedule_once(
+                        lambda dt: popup.update_lyrics(lyrics_text, f'Transcribed {len(segments)} lines'), 0
+                    )
+                else:
+                    app.log('No speech detected')
+                    Clock.schedule_once(
+                        lambda dt: popup.update_lyrics('', 'No speech detected in audio'), 0
+                    )
+
+            except Exception as e:
+                app.log(f'Transcription error: {e}')
+                Clock.schedule_once(
+                    lambda dt: popup.update_lyrics('', f'Error: {str(e)[:50]}'), 0
+                )
+
+        threading.Thread(target=transcribe_task, daemon=True).start()
 
 
 def main():
