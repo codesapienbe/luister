@@ -1853,7 +1853,7 @@ class LyricsPopup(Popup):
             self.save_btn.disabled = False
 
     def save_lyrics(self, instance):
-        """Save lyrics to file"""
+        """Save lyrics to file and return to player"""
         if not self.lyrics_label.text:
             return
 
@@ -1862,6 +1862,12 @@ class LyricsPopup(Popup):
             success = app.save_lyrics_for_track(self.file_path, self.lyrics_label.text)
             if success:
                 self.status_label.text = 'Lyrics saved!'
+                # Dismiss popup and go back to main player after short delay
+                def go_back(dt):
+                    self.dismiss()
+                    if app.root:
+                        app.root.current = 'main'
+                Clock.schedule_once(go_back, 0.8)
             else:
                 self.status_label.text = 'Failed to save lyrics'
 
@@ -1887,6 +1893,8 @@ class LuisterApp(App):
         self._lyrics_dir = self.config_manager._config_dir / "lyrics"
         self._current_lyrics: List[tuple] = []  # List of (timestamp_seconds, text)
         self._current_lyrics_index: int = -1
+        self._plain_lyrics_lines: List[str] = []  # For non-synced lyrics
+        self._plain_lyrics_index: int = -1
 
     def log(self, msg: str):
         """Update debug footer with a message (thread-safe)"""
@@ -2307,6 +2315,10 @@ class LuisterApp(App):
         try:
             lyrics_path.write_text(lyrics, encoding='utf-8')
             self.log(f'Lyrics saved: {lyrics_path.name}')
+            # Reload lyrics if this is the current track
+            if self.current_index >= 0 and self.current_index < len(self.playlist):
+                if self.playlist[self.current_index] == audio_path:
+                    self.load_lyrics_for_current_track()
             return True
         except Exception as e:
             self.log(f'Error saving lyrics: {e}')
@@ -2346,6 +2358,7 @@ class LuisterApp(App):
         """Load synced lyrics for the currently playing track"""
         self._current_lyrics = []
         self._current_lyrics_index = -1
+        self._plain_lyrics_lines = []
 
         if self.current_index < 0 or self.current_index >= len(self.playlist):
             return
@@ -2358,36 +2371,57 @@ class LuisterApp(App):
             if self._current_lyrics:
                 self.log(f'Loaded {len(self._current_lyrics)} synced lines')
             else:
-                # Plain text lyrics (no timestamps) - show as single block
-                self.main_screen.update_lyrics(lyrics_text[:200], '')
+                # Plain text lyrics (no timestamps) - split into lines for scrolling display
+                lines = [line.strip() for line in lyrics_text.split('\n') if line.strip()]
+                self._plain_lyrics_lines = lines
+                if lines:
+                    self.log(f'Loaded {len(lines)} plain lyrics lines')
+                    # Show first line immediately
+                    next_line = lines[1] if len(lines) > 1 else ''
+                    self.main_screen.update_lyrics(lines[0], next_line)
 
     def update_lyrics_display(self, position: float):
         """Update lyrics display based on current playback position"""
-        if not self._current_lyrics:
+        # Handle synced LRC lyrics
+        if self._current_lyrics:
+            # Find the current lyrics line based on position
+            current_idx = -1
+            for i, (timestamp, _) in enumerate(self._current_lyrics):
+                if timestamp <= position:
+                    current_idx = i
+                else:
+                    break
+
+            # Only update if changed
+            if current_idx != self._current_lyrics_index:
+                self._current_lyrics_index = current_idx
+
+                if current_idx >= 0:
+                    current_text = self._current_lyrics[current_idx][1]
+                    next_text = ''
+                    if current_idx + 1 < len(self._current_lyrics):
+                        next_text = self._current_lyrics[current_idx + 1][1]
+                    self.main_screen.update_lyrics(current_text, next_text)
+                else:
+                    # Before first lyrics line
+                    self.main_screen.update_lyrics('', self._current_lyrics[0][1])
             return
 
-        # Find the current lyrics line based on position
-        current_idx = -1
-        for i, (timestamp, _) in enumerate(self._current_lyrics):
-            if timestamp <= position:
-                current_idx = i
-            else:
-                break
+        # Handle plain text lyrics (scroll based on song duration)
+        if self._plain_lyrics_lines and self.sound and self.sound.length:
+            total_lines = len(self._plain_lyrics_lines)
+            duration = self.sound.length
+            # Calculate which line should be shown based on position
+            line_idx = int((position / duration) * total_lines)
+            line_idx = max(0, min(line_idx, total_lines - 1))
 
-        # Only update if changed
-        if current_idx != self._current_lyrics_index:
-            self._current_lyrics_index = current_idx
-
-            if current_idx >= 0:
-                current_text = self._current_lyrics[current_idx][1]
+            if line_idx != self._plain_lyrics_index:
+                self._plain_lyrics_index = line_idx
+                current_text = self._plain_lyrics_lines[line_idx]
                 next_text = ''
-                if current_idx + 1 < len(self._current_lyrics):
-                    next_text = self._current_lyrics[current_idx + 1][1]
+                if line_idx + 1 < total_lines:
+                    next_text = self._plain_lyrics_lines[line_idx + 1]
                 self.main_screen.update_lyrics(current_text, next_text)
-            else:
-                # Before first lyrics line
-                if self._current_lyrics:
-                    self.main_screen.update_lyrics('', self._current_lyrics[0][1])
 
     def fetch_lyrics(self, song_title: str, popup: 'LyricsPopup'):
         """Fetch lyrics from online API (runs in background thread)"""
