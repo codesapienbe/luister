@@ -180,11 +180,17 @@ class Theme:
     SLIDER_HANDLE = (1, 1, 1, 0.95)                 # White handle
 
 
+# Standard button sizes for consistency across all screens
+BUTTON_SIZE = dp(52)        # Standard icon button size
+BUTTON_SIZE_LARGE = dp(64)  # Main play/pause button
+BUTTON_SIZE_SMALL = dp(44)  # Compact buttons (volume icon, etc.)
+
+
 # ============================================================================
 # ANIMATED SPLASH SCREEN
 # ============================================================================
 class SplashScreen(Screen):
-    """Animated splash screen with logo and app name"""
+    """Animated splash screen with logo only"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -248,31 +254,7 @@ class SplashScreen(Screen):
         )
         layout.add_widget(self.app_name)
 
-        # Tagline
-        self.tagline = Label(
-            text='Music Player',
-            font_size=sp(16),
-            color=Theme.TEXT_SECONDARY,
-            pos_hint={'center_x': 0.5, 'center_y': 0.32},
-            opacity=0
-        )
-        layout.add_widget(self.tagline)
-
-        # Loading indicator dots
-        self.dots_label = Label(
-            text='',
-            font_size=sp(24),
-            color=Theme.ACCENT,
-            pos_hint={'center_x': 0.5, 'center_y': 0.18},
-            opacity=0
-        )
-        layout.add_widget(self.dots_label)
-
         self.add_widget(layout)
-
-        # Animation state
-        self._dot_count = 0
-        self._dot_event = None
 
     def _update_bg(self, *args):
         self._bg.pos = self.pos
@@ -283,56 +265,38 @@ class SplashScreen(Screen):
         # Reset state
         self.logo_widget.opacity = 0
         self.app_name.opacity = 0
-        self.tagline.opacity = 0
-        self.dots_label.opacity = 0
 
-        # Logo animation: fade in + scale effect (simulated via opacity)
-        logo_anim = Animation(opacity=1, duration=0.6, t='out_cubic')
+        # Logo animation: fade in with pulse
+        logo_anim = Animation(opacity=1, duration=0.5, t='out_cubic')
         logo_anim.start(self.logo_widget)
 
-        # Pulse animation for logo
+        # Gentle pulse animation for logo
         def pulse_logo(dt):
             if self.logo_widget.opacity > 0:
-                pulse = Animation(opacity=0.85, duration=0.8) + Animation(opacity=1, duration=0.8)
+                pulse = Animation(opacity=0.9, duration=0.6) + Animation(opacity=1, duration=0.6)
                 pulse.repeat = True
                 pulse.start(self.logo_widget)
-        Clock.schedule_once(pulse_logo, 0.8)
+        Clock.schedule_once(pulse_logo, 0.6)
 
         # App name fade in (delayed)
-        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.5).start(self.app_name), 0.4)
-
-        # Tagline fade in (more delayed)
-        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.5).start(self.tagline), 0.6)
-
-        # Loading dots
-        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.3).start(self.dots_label), 0.8)
-        self._dot_event = Clock.schedule_interval(self._animate_dots, 0.4)
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.4).start(self.app_name), 0.3)
 
         # Transition to main screen after delay
-        Clock.schedule_once(self._go_to_main, 2.5)
-
-    def _animate_dots(self, dt):
-        self._dot_count = (self._dot_count + 1) % 4
-        self.dots_label.text = '.' * self._dot_count if self._dot_count > 0 else ''
+        Clock.schedule_once(self._go_to_main, 1.8)
 
     def _go_to_main(self, dt):
-        if self._dot_event:
-            self._dot_event.cancel()
-
-        # Fade out everything
-        fade_out = Animation(opacity=0, duration=0.3)
+        # Fade out
+        fade_out = Animation(opacity=0, duration=0.25)
         fade_out.start(self.logo_widget)
         fade_out.start(self.app_name)
-        fade_out.start(self.tagline)
-        fade_out.start(self.dots_label)
 
         # Switch screen
         def switch(dt):
             app = App.get_running_app()
             if app and app.root:
-                app.root.transition.duration = 0.5
+                app.root.transition.duration = 0.4
                 app.root.current = 'main'
-        Clock.schedule_once(switch, 0.35)
+        Clock.schedule_once(switch, 0.3)
 
 
 # ============================================================================
@@ -1021,13 +985,13 @@ class PlayerControls(BoxLayout):
         self.padding = [dp(8), dp(8)]
 
         # Left spacer for centering
-        self.add_widget(Widget(size_hint=(0.1, 1)))
+        self.add_widget(Widget(size_hint=(1, 1)))
 
         # Shuffle button
         self.shuffle_btn = IconButton(
             icon='shuffle',
-            size_hint=(None, 1),
-            width=dp(48)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.shuffle_btn.bind(on_release=self.on_shuffle)
         self.add_widget(self.shuffle_btn)
@@ -1035,8 +999,8 @@ class PlayerControls(BoxLayout):
         # Previous button
         self.prev_btn = IconButton(
             icon='prev',
-            size_hint=(None, 1),
-            width=dp(52)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.prev_btn.bind(on_release=self.on_prev)
         self.add_widget(self.prev_btn)
@@ -1045,16 +1009,16 @@ class PlayerControls(BoxLayout):
         self.play_btn = GestureButton(
             icon='play',
             is_accent=True,
-            size_hint=(None, 1),
-            width=dp(68)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE_LARGE, BUTTON_SIZE_LARGE)
         )
         self.add_widget(self.play_btn)
 
         # Next button
         self.next_btn = IconButton(
             icon='next',
-            size_hint=(None, 1),
-            width=dp(52)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.next_btn.bind(on_release=self.on_next)
         self.add_widget(self.next_btn)
@@ -1062,14 +1026,14 @@ class PlayerControls(BoxLayout):
         # Loop button
         self.loop_btn = IconButton(
             icon='loop',
-            size_hint=(None, 1),
-            width=dp(48)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.loop_btn.bind(on_release=self.on_loop)
         self.add_widget(self.loop_btn)
 
         # Right spacer for centering
-        self.add_widget(Widget(size_hint=(0.1, 1)))
+        self.add_widget(Widget(size_hint=(1, 1)))
 
     def on_prev(self, instance):
         app = App.get_running_app()
@@ -1105,13 +1069,14 @@ class PlayerControls(BoxLayout):
 # PLAYLIST WIDGETS
 # ============================================================================
 class PlaylistItem(BoxLayout):
-    """Individual playlist item with glass styling"""
+    """Individual playlist item with glass styling - tap to play, long-press for lyrics"""
 
     index = NumericProperty(0)
     title = StringProperty('')
+    file_path = StringProperty('')
     is_current = BooleanProperty(False)
 
-    def __init__(self, index: int, title: str, **kwargs):
+    def __init__(self, index: int, title: str, file_path: str = '', **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'horizontal'
         self.size_hint_y = None
@@ -1119,6 +1084,12 @@ class PlaylistItem(BoxLayout):
         self.padding = [dp(16), dp(8)]
         self.index = index
         self.title = title
+        self.file_path = file_path
+
+        # Long press detection
+        self._touch_start = None
+        self._long_press_event = None
+        self._long_press_triggered = False
 
         self.bind(pos=self._draw_bg, size=self._draw_bg, is_current=self._draw_bg)
 
@@ -1146,26 +1117,72 @@ class PlaylistItem(BoxLayout):
         self.label.bind(size=self.label.setter('text_size'))
         self.add_widget(self.label)
 
-        self.bind(on_touch_down=self.on_item_touch)
-
     def _draw_bg(self, *args):
         self.canvas.before.clear()
         with self.canvas.before:
             if self.is_current:
-                Color(*Theme.ACCENT[:3], 0.2)
+                # Highlighted background for current playing track
+                Color(*Theme.ACCENT[:3], 0.35)
                 RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(10)])
+                # Left accent bar indicator
+                Color(*Theme.ACCENT)
+                RoundedRectangle(
+                    pos=(self.x, self.y + dp(8)),
+                    size=(dp(4), self.height - dp(16)),
+                    radius=[dp(2)]
+                )
             else:
-                Color(*Theme.BG_SECONDARY[:3], 0.5)
+                Color(*Theme.BG_SECONDARY[:3], 0.3)
                 RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(10)])
 
-    def on_item_touch(self, instance, touch):
+    def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
+            self._touch_start = touch.pos
+            self._long_press_triggered = False
+            # Schedule long press detection (0.6 seconds)
+            self._long_press_event = Clock.schedule_once(self._on_long_press, 0.6)
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if self._touch_start and self._long_press_event:
+            # Cancel long press if moved too much
+            dx = abs(touch.pos[0] - self._touch_start[0])
+            dy = abs(touch.pos[1] - self._touch_start[1])
+            if dx > dp(15) or dy > dp(15):
+                self._long_press_event.cancel()
+                self._long_press_event = None
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if self._touch_start and self.collide_point(*touch.pos):
+            # Cancel pending long press
+            if self._long_press_event:
+                self._long_press_event.cancel()
+                self._long_press_event = None
+
+            # If long press was triggered, don't do tap action
+            if self._long_press_triggered:
+                self._touch_start = None
+                return True
+
+            # Regular tap - play the track
             app = App.get_running_app()
             if app:
                 app.play_index(self.index)
                 app.root.current = 'main'
+
+            self._touch_start = None
             return True
-        return False
+        return super().on_touch_up(touch)
+
+    def _on_long_press(self, dt):
+        """Handle long press - show lyrics"""
+        self._long_press_triggered = True
+        self._long_press_event = None
+        app = App.get_running_app()
+        if app:
+            app.show_lyrics_popup(self.title, self.file_path)
 
     def update_highlight(self, is_current: bool):
         self.is_current = is_current
@@ -1207,7 +1224,7 @@ class MainScreen(Screen):
         )
 
         # Track title with glass panel
-        title_box = BoxLayout(size_hint=(1, 0.08))
+        title_box = BoxLayout(size_hint=(1, 0.06))
         self.title_label = Label(
             text=self.track_title,
             font_size=sp(18),
@@ -1221,8 +1238,38 @@ class MainScreen(Screen):
         title_box.add_widget(self.title_label)
         layout.add_widget(title_box)
 
+        # Lyrics display area (above visualizer)
+        lyrics_container = BoxLayout(orientation='vertical', size_hint=(1, 0.12), spacing=dp(2))
+
+        # Current lyrics line (main, larger)
+        self.lyrics_current = Label(
+            text='',
+            font_size=sp(16),
+            color=Theme.ACCENT,
+            halign='center',
+            valign='bottom',
+            bold=True,
+            size_hint=(1, 0.6)
+        )
+        self.lyrics_current.bind(width=lambda *x: setattr(self.lyrics_current, 'text_size', (self.lyrics_current.width, None)))
+        lyrics_container.add_widget(self.lyrics_current)
+
+        # Next lyrics line (dimmer, smaller)
+        self.lyrics_next = Label(
+            text='',
+            font_size=sp(13),
+            color=Theme.TEXT_TERTIARY,
+            halign='center',
+            valign='top',
+            size_hint=(1, 0.4)
+        )
+        self.lyrics_next.bind(width=lambda *x: setattr(self.lyrics_next, 'text_size', (self.lyrics_next.width, None)))
+        lyrics_container.add_widget(self.lyrics_next)
+
+        layout.add_widget(lyrics_container)
+
         # Visualizer
-        self.visualizer = VisualizerWidget(size_hint=(1, 0.35))
+        self.visualizer = VisualizerWidget(size_hint=(1, 0.28))
         layout.add_widget(self.visualizer)
 
         # Time display
@@ -1265,8 +1312,8 @@ class MainScreen(Screen):
         # Volume icon (using IconButton but non-interactive)
         vol_icon = IconButton(
             icon='volume',
-            size_hint=(None, 1),
-            width=dp(32)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         vol_icon.disabled = True  # Just for display
         volume_layout.add_widget(vol_icon)
@@ -1282,35 +1329,35 @@ class MainScreen(Screen):
         layout.add_widget(volume_layout)
 
         # Player controls
-        self.controls = PlayerControls(size_hint=(1, 0.14))
+        self.controls = PlayerControls(size_hint=(1, None), height=BUTTON_SIZE_LARGE + dp(16))
         layout.add_widget(self.controls)
 
         # Bottom action buttons (centered with consistent sizing)
-        bottom_layout = BoxLayout(size_hint=(1, 0.12), spacing=dp(24), padding=[dp(16), dp(8)])
+        bottom_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(16), spacing=dp(24), padding=[dp(16), dp(8)])
 
         # Left spacer for centering
         bottom_layout.add_widget(Widget(size_hint=(1, 1)))
 
         self.playlist_btn = IconButton(
             icon='list',
-            size_hint=(None, 1),
-            width=dp(56)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.playlist_btn.bind(on_release=self.open_playlist)
         bottom_layout.add_widget(self.playlist_btn)
 
         self.open_btn = IconButton(
             icon='folder',
-            size_hint=(None, 1),
-            width=dp(56)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.open_btn.bind(on_release=self.open_folder)
         bottom_layout.add_widget(self.open_btn)
 
         self.youtube_btn = IconButton(
             icon='youtube',
-            size_hint=(None, 1),
-            width=dp(56)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         self.youtube_btn.bind(on_release=self.open_youtube)
         bottom_layout.add_widget(self.youtube_btn)
@@ -1367,12 +1414,20 @@ class MainScreen(Screen):
         self.title_label.text = title
         mins, secs = divmod(int(duration), 60)
         self.time_total.text = f'{mins}:{secs:02d}'
+        # Clear lyrics when track changes
+        self.lyrics_current.text = ''
+        self.lyrics_next.text = ''
 
     def update_position(self, position: float, duration: float):
         if duration > 0:
             self.progress_slider.value = (position / duration) * 100
             mins, secs = divmod(int(position), 60)
             self.time_current.text = f'{mins}:{secs:02d}'
+
+    def update_lyrics(self, current_line: str, next_line: str = ''):
+        """Update the lyrics display with current and next lines"""
+        self.lyrics_current.text = current_line
+        self.lyrics_next.text = next_line
 
 
 class PlaylistScreen(Screen):
@@ -1395,12 +1450,12 @@ class PlaylistScreen(Screen):
         )
 
         # Header
-        header = BoxLayout(size_hint=(1, 0.08), spacing=dp(12))
+        header = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(12))
 
         back_btn = IconButton(
             icon='back',
-            size_hint=(None, 1),
-            width=dp(44)
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
         )
         back_btn.bind(on_release=self.go_back)
         header.add_widget(back_btn)
@@ -1437,7 +1492,7 @@ class PlaylistScreen(Screen):
             size=lambda *a: setattr(self._scroll_bg, 'size', scroll_container.size)
         )
 
-        scroll = ScrollView(size_hint=(1, 1))
+        self.scroll = ScrollView(size_hint=(1, 1))
         self.playlist_grid = GridLayout(
             cols=1,
             spacing=dp(4),
@@ -1445,24 +1500,30 @@ class PlaylistScreen(Screen):
             padding=[dp(8), dp(8)]
         )
         self.playlist_grid.bind(minimum_height=self.playlist_grid.setter('height'))
-        scroll.add_widget(self.playlist_grid)
-        scroll_container.add_widget(scroll)
+        self.scroll.add_widget(self.playlist_grid)
+        scroll_container.add_widget(self.scroll)
         layout.add_widget(scroll_container)
 
         # Bottom actions
-        actions = BoxLayout(size_hint=(1, 0.1), spacing=dp(12))
+        actions = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(16), spacing=dp(24))
 
-        add_btn = IconButton(icon='folder', size_hint=(1, 1))
+        # Left spacer for centering
+        actions.add_widget(Widget(size_hint=(1, 1)))
+
+        add_btn = IconButton(icon='folder', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         add_btn.bind(on_release=self.add_files)
         actions.add_widget(add_btn)
 
-        scan_btn = IconButton(icon='scan', size_hint=(1, 1))
+        scan_btn = IconButton(icon='scan', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         scan_btn.bind(on_release=self.scan_music)
         actions.add_widget(scan_btn)
 
-        clear_btn = IconButton(icon='clear', size_hint=(1, 1))
+        clear_btn = IconButton(icon='clear', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         clear_btn.bind(on_release=self.clear_playlist)
         actions.add_widget(clear_btn)
+
+        # Right spacer for centering
+        actions.add_widget(Widget(size_hint=(1, 1)))
 
         layout.add_widget(actions)
         main_box.add_widget(layout)
@@ -1498,11 +1559,46 @@ class PlaylistScreen(Screen):
 
         for idx, path in enumerate(playlist):
             title = Path(path).stem
-            item = PlaylistItem(index=idx, title=title)
+            item = PlaylistItem(index=idx, title=title, file_path=path)
             item.update_highlight(idx == current_index)
             self.playlist_grid.add_widget(item)
 
         self.count_label.text = f'{len(playlist)} tracks'
+
+        # Auto-scroll to current playing item
+        if current_index >= 0 and current_index < len(playlist):
+            Clock.schedule_once(lambda dt: self._scroll_to_current(current_index, len(playlist)), 0.1)
+
+    def _scroll_to_current(self, current_index: int, total_items: int):
+        """Scroll the playlist to show the currently playing item"""
+        if total_items <= 0:
+            return
+
+        # Calculate relative position (0 = top, 1 = bottom in scroll_y)
+        # Item height is dp(56) + dp(4) spacing
+        item_height = dp(56) + dp(4)
+        total_height = total_items * item_height
+        scroll_height = self.scroll.height
+
+        # Only scroll if content is taller than viewport
+        if total_height <= scroll_height:
+            return
+
+        # Calculate position of current item from top
+        item_top = current_index * item_height
+
+        # Center the item in the viewport
+        target_scroll_pos = item_top - (scroll_height / 2) + (item_height / 2)
+
+        # Clamp to valid range
+        max_scroll = total_height - scroll_height
+        target_scroll_pos = max(0, min(target_scroll_pos, max_scroll))
+
+        # Convert to scroll_y (1 = top, 0 = bottom)
+        scroll_y = 1 - (target_scroll_pos / max_scroll) if max_scroll > 0 else 1
+
+        # Animate scroll
+        Animation(scroll_y=scroll_y, duration=0.3, t='out_cubic').start(self.scroll)
 
 
 # ============================================================================
@@ -1574,15 +1670,21 @@ class YouTubeDownloadPopup(Popup):
         layout.add_widget(progress_box)
 
         # Buttons
-        btn_layout = BoxLayout(size_hint=(1, 0.25), spacing=dp(16))
+        btn_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(16))
 
-        self.cancel_btn = IconButton(icon='back', size_hint=(0.3, 1))
+        # Left spacer
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
+
+        self.cancel_btn = IconButton(icon='back', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         self.cancel_btn.bind(on_release=lambda x: self.dismiss())
         btn_layout.add_widget(self.cancel_btn)
 
-        self.download_btn = IconButton(icon='youtube', is_accent=True, size_hint=(0.7, 1))
+        self.download_btn = IconButton(icon='youtube', is_accent=True, size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         self.download_btn.bind(on_release=self.start_download)
         btn_layout.add_widget(self.download_btn)
+
+        # Right spacer
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
 
         layout.add_widget(btn_layout)
         container.add_widget(layout)
@@ -1612,6 +1714,159 @@ class YouTubeDownloadPopup(Popup):
 
 
 # ============================================================================
+# LYRICS POPUP
+# ============================================================================
+class LyricsPopup(Popup):
+    """Popup for fetching and displaying lyrics with glass styling"""
+
+    def __init__(self, song_title: str, file_path: str, **kwargs):
+        super().__init__(**kwargs)
+        self.song_title = song_title
+        self.file_path = file_path
+        self.title = ''
+        self.separator_height = 0
+        self.size_hint = (0.95, 0.85)
+        self.auto_dismiss = True
+        self.background = ''
+        self.background_color = (0, 0, 0, 0)
+
+        # Main container with glass effect
+        container = BoxLayout(orientation='vertical')
+
+        with container.canvas.before:
+            Color(*Theme.GLASS_BG)
+            self._bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[dp(20)])
+        container.bind(
+            pos=lambda *a: setattr(self._bg, 'pos', container.pos),
+            size=lambda *a: setattr(self._bg, 'size', container.size)
+        )
+
+        layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
+
+        # Header with title and close button
+        header = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+
+        back_btn = IconButton(icon='back', size_hint=(None, None), size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL))
+        back_btn.bind(on_release=lambda x: self.dismiss())
+        header.add_widget(back_btn)
+
+        header.add_widget(Label(
+            text=song_title[:40] + ('...' if len(song_title) > 40 else ''),
+            font_size=sp(16),
+            color=Theme.TEXT_PRIMARY,
+            bold=True,
+            size_hint=(1, 1),
+            halign='left',
+            valign='middle'
+        ))
+        layout.add_widget(header)
+
+        # Status label
+        self.status_label = Label(
+            text='Tap "Fetch" to download lyrics',
+            size_hint=(1, None),
+            height=dp(24),
+            font_size=sp(13),
+            color=Theme.TEXT_SECONDARY
+        )
+        layout.add_widget(self.status_label)
+
+        # Scrollable lyrics content
+        scroll_container = BoxLayout(size_hint=(1, 1))
+        with scroll_container.canvas.before:
+            Color(*Theme.BG_SECONDARY[:3], 0.5)
+            self._scroll_bg = RoundedRectangle(
+                pos=scroll_container.pos,
+                size=scroll_container.size,
+                radius=[dp(12)]
+            )
+        scroll_container.bind(
+            pos=lambda *a: setattr(self._scroll_bg, 'pos', scroll_container.pos),
+            size=lambda *a: setattr(self._scroll_bg, 'size', scroll_container.size)
+        )
+
+        scroll = ScrollView(size_hint=(1, 1))
+        self.lyrics_label = Label(
+            text='',
+            font_size=sp(14),
+            color=Theme.TEXT_PRIMARY,
+            halign='left',
+            valign='top',
+            size_hint_y=None,
+            padding=[dp(12), dp(12)]
+        )
+        self.lyrics_label.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1] + dp(24)))
+        self.lyrics_label.bind(width=lambda inst, val: setattr(inst, 'text_size', (val - dp(24), None)))
+        scroll.add_widget(self.lyrics_label)
+        scroll_container.add_widget(scroll)
+        layout.add_widget(scroll_container)
+
+        # Action buttons
+        btn_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(16))
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
+
+        # Fetch button
+        self.fetch_btn = IconButton(icon='scan', is_accent=True, size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
+        self.fetch_btn.bind(on_release=self.fetch_lyrics)
+        btn_layout.add_widget(self.fetch_btn)
+
+        # Save button (save synced lyrics)
+        self.save_btn = IconButton(icon='folder', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
+        self.save_btn.bind(on_release=self.save_lyrics)
+        self.save_btn.disabled = True
+        btn_layout.add_widget(self.save_btn)
+
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
+        layout.add_widget(btn_layout)
+
+        container.add_widget(layout)
+        self.content = container
+
+        # Check if lyrics already exist
+        self._check_existing_lyrics()
+
+    def _check_existing_lyrics(self):
+        """Check if lyrics file already exists"""
+        app = App.get_running_app()
+        if app:
+            lyrics = app.get_lyrics_for_track(self.file_path)
+            if lyrics:
+                self.lyrics_label.text = lyrics
+                self.status_label.text = 'Lyrics loaded from file'
+                self.save_btn.disabled = False
+
+    def fetch_lyrics(self, instance):
+        """Fetch lyrics from online API"""
+        self.fetch_btn.disabled = True
+        self.status_label.text = 'Searching for lyrics...'
+
+        app = App.get_running_app()
+        if app:
+            app.fetch_lyrics(self.song_title, self)
+
+    def update_lyrics(self, lyrics: str, status: str):
+        """Update the lyrics display"""
+        self.lyrics_label.text = lyrics
+        self.status_label.text = status
+        self.fetch_btn.disabled = False
+        if lyrics:
+            self.save_btn.disabled = False
+
+    def save_lyrics(self, instance):
+        """Save lyrics to file"""
+        if not self.lyrics_label.text:
+            return
+
+        app = App.get_running_app()
+        if app:
+            success = app.save_lyrics_for_track(self.file_path, self.lyrics_label.text)
+            if success:
+                self.status_label.text = 'Lyrics saved!'
+            else:
+                self.status_label.text = 'Failed to save lyrics'
+
+
+# ============================================================================
 # MAIN APPLICATION
 # ============================================================================
 class LuisterApp(App):
@@ -1627,6 +1882,11 @@ class LuisterApp(App):
         self.is_looping: bool = False
         self._update_event = None
         self._download_thread: Optional[threading.Thread] = None
+
+        # Lyrics management
+        self._lyrics_dir = self.config_manager._config_dir / "lyrics"
+        self._current_lyrics: List[tuple] = []  # List of (timestamp_seconds, text)
+        self._current_lyrics_index: int = -1
 
     def log(self, msg: str):
         """Update debug footer with a message (thread-safe)"""
@@ -1766,6 +2026,9 @@ class LuisterApp(App):
                 self.main_screen.update_position(pos, length)
                 self.main_screen.visualizer.update_position(pos * 1000)
 
+                # Update synced lyrics display
+                self.update_lyrics_display(pos)
+
                 if pos >= length - 0.5:
                     self.next_track()
             except Exception:
@@ -1788,6 +2051,8 @@ class LuisterApp(App):
                 self.main_screen.update_track_info(title, duration)
                 self.sound.volume = self.config_manager.volume
                 self.main_screen.visualizer.set_audio(path)
+                # Load synced lyrics if available
+                self.load_lyrics_for_current_track()
                 return True
             else:
                 self.log(f'Audio load failed: {Path(path).suffix}')
@@ -1950,9 +2215,17 @@ class LuisterApp(App):
                     'no_warnings': True,
                     'logger': DebugLogger(),
                     'noprogress': True,
-                    # Avoid external calls
+                    # Bypass bot detection
+                    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                    },
+                    # Network options
+                    'socket_timeout': 30,
+                    'retries': 3,
+                    'fragment_retries': 3,
                     'no_check_certificates': True,
-                    'prefer_insecure': True,
                 }
 
                 # Get all audio files before download
@@ -2000,6 +2273,194 @@ class LuisterApp(App):
 
         self._download_thread = threading.Thread(target=download_task, daemon=True)
         self._download_thread.start()
+
+    # =========================================================================
+    # LYRICS MANAGEMENT
+    # =========================================================================
+    def show_lyrics_popup(self, song_title: str, file_path: str):
+        """Show lyrics popup for a song"""
+        popup = LyricsPopup(song_title=song_title, file_path=file_path)
+        popup.open()
+
+    def get_lyrics_path(self, audio_path: str) -> Path:
+        """Get the lyrics file path for an audio file"""
+        self._lyrics_dir.mkdir(parents=True, exist_ok=True)
+        # Use audio filename as base for lyrics file
+        audio_name = Path(audio_path).stem
+        # Sanitize filename
+        safe_name = "".join(c for c in audio_name if c.isalnum() or c in (' ', '-', '_')).strip()
+        return self._lyrics_dir / f"{safe_name}.lrc"
+
+    def get_lyrics_for_track(self, audio_path: str) -> Optional[str]:
+        """Get saved lyrics for a track, returns None if not found"""
+        lyrics_path = self.get_lyrics_path(audio_path)
+        try:
+            if lyrics_path.exists():
+                return lyrics_path.read_text(encoding='utf-8')
+        except Exception as e:
+            self.log(f'Error reading lyrics: {e}')
+        return None
+
+    def save_lyrics_for_track(self, audio_path: str, lyrics: str) -> bool:
+        """Save lyrics to file"""
+        lyrics_path = self.get_lyrics_path(audio_path)
+        try:
+            lyrics_path.write_text(lyrics, encoding='utf-8')
+            self.log(f'Lyrics saved: {lyrics_path.name}')
+            return True
+        except Exception as e:
+            self.log(f'Error saving lyrics: {e}')
+            return False
+
+    def parse_lrc_lyrics(self, lrc_text: str) -> List[tuple]:
+        """Parse LRC format lyrics into list of (timestamp_seconds, text)"""
+        import re
+        lyrics = []
+        # Match [mm:ss.xx] or [mm:ss] format
+        pattern = r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$'
+
+        for line in lrc_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            match = re.match(pattern, line)
+            if match:
+                mins = int(match.group(1))
+                secs = int(match.group(2))
+                ms = int(match.group(3) or 0)
+                # Normalize milliseconds (could be 2 or 3 digits)
+                if len(match.group(3) or '') == 2:
+                    ms *= 10
+                text = match.group(4).strip()
+
+                timestamp = mins * 60 + secs + ms / 1000.0
+                if text:  # Only add non-empty lines
+                    lyrics.append((timestamp, text))
+
+        # Sort by timestamp
+        lyrics.sort(key=lambda x: x[0])
+        return lyrics
+
+    def load_lyrics_for_current_track(self):
+        """Load synced lyrics for the currently playing track"""
+        self._current_lyrics = []
+        self._current_lyrics_index = -1
+
+        if self.current_index < 0 or self.current_index >= len(self.playlist):
+            return
+
+        audio_path = self.playlist[self.current_index]
+        lyrics_text = self.get_lyrics_for_track(audio_path)
+
+        if lyrics_text:
+            self._current_lyrics = self.parse_lrc_lyrics(lyrics_text)
+            if self._current_lyrics:
+                self.log(f'Loaded {len(self._current_lyrics)} synced lines')
+            else:
+                # Plain text lyrics (no timestamps) - show as single block
+                self.main_screen.update_lyrics(lyrics_text[:200], '')
+
+    def update_lyrics_display(self, position: float):
+        """Update lyrics display based on current playback position"""
+        if not self._current_lyrics:
+            return
+
+        # Find the current lyrics line based on position
+        current_idx = -1
+        for i, (timestamp, _) in enumerate(self._current_lyrics):
+            if timestamp <= position:
+                current_idx = i
+            else:
+                break
+
+        # Only update if changed
+        if current_idx != self._current_lyrics_index:
+            self._current_lyrics_index = current_idx
+
+            if current_idx >= 0:
+                current_text = self._current_lyrics[current_idx][1]
+                next_text = ''
+                if current_idx + 1 < len(self._current_lyrics):
+                    next_text = self._current_lyrics[current_idx + 1][1]
+                self.main_screen.update_lyrics(current_text, next_text)
+            else:
+                # Before first lyrics line
+                if self._current_lyrics:
+                    self.main_screen.update_lyrics('', self._current_lyrics[0][1])
+
+    def fetch_lyrics(self, song_title: str, popup: 'LyricsPopup'):
+        """Fetch lyrics from online API (runs in background thread)"""
+        app = self
+
+        def fetch_task():
+            app.log(f'Fetching lyrics for: {song_title}')
+            try:
+                import requests
+
+                # Clean up song title for search
+                # Remove common patterns like "(Official Video)", "[Lyrics]", etc.
+                import re
+                clean_title = re.sub(r'\[.*?\]|\(.*?\)', '', song_title).strip()
+                clean_title = re.sub(r'\s+', ' ', clean_title)
+
+                # Try to split into artist and title if there's a separator
+                artist = ''
+                title = clean_title
+                for sep in [' - ', ' – ', ' — ', ' _ ']:
+                    if sep in clean_title:
+                        parts = clean_title.split(sep, 1)
+                        artist = parts[0].strip()
+                        title = parts[1].strip()
+                        break
+
+                app.log(f'Searching: {artist or "?"} - {title}')
+
+                # Try lyrics.ovh API (free, no key needed)
+                lyrics_text = None
+
+                if artist:
+                    try:
+                        url = f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}"
+                        response = requests.get(url, timeout=10)
+                        if response.status_code == 200:
+                            data = response.json()
+                            lyrics_text = data.get('lyrics', '')
+                    except Exception as e:
+                        app.log(f'lyrics.ovh error: {e}')
+
+                # If no artist or first API failed, try lrclib.net (has synced lyrics!)
+                if not lyrics_text:
+                    try:
+                        # lrclib provides synced lyrics
+                        search_url = f"https://lrclib.net/api/search?q={requests.utils.quote(clean_title)}"
+                        response = requests.get(search_url, timeout=10, headers={'User-Agent': 'Luister/1.0'})
+                        if response.status_code == 200:
+                            results = response.json()
+                            if results:
+                                # Get synced lyrics if available, else plain
+                                best = results[0]
+                                lyrics_text = best.get('syncedLyrics') or best.get('plainLyrics', '')
+                                app.log(f'Found on lrclib: {best.get("trackName", "")}')
+                    except Exception as e:
+                        app.log(f'lrclib error: {e}')
+
+                if lyrics_text:
+                    Clock.schedule_once(
+                        lambda dt: popup.update_lyrics(lyrics_text, 'Lyrics found!'), 0
+                    )
+                else:
+                    Clock.schedule_once(
+                        lambda dt: popup.update_lyrics('', 'No lyrics found'), 0
+                    )
+
+            except Exception as e:
+                app.log(f'Fetch error: {e}')
+                Clock.schedule_once(
+                    lambda dt: popup.update_lyrics('', f'Error: {str(e)[:50]}'), 0
+                )
+
+        threading.Thread(target=fetch_task, daemon=True).start()
 
 
 def main():
