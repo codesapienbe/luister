@@ -381,6 +381,14 @@ class Config:
     def volume(self, value: float):
         self.set('volume', value)
 
+    @property
+    def openai_api_key(self) -> str:
+        return self.get('openai_api_key', '')
+
+    @openai_api_key.setter
+    def openai_api_key(self, value: str):
+        self.set('openai_api_key', value)
+
 
 # ============================================================================
 # CUSTOM STYLED WIDGETS
@@ -665,6 +673,25 @@ class IconButton(ButtonBehavior, Widget):
                 cx - s * 0.3, cy,
                 cx + s * 0.3, cy + s
             ], width=dp(2.5))
+
+        elif self.icon == 'settings':
+            # Gear icon
+            s = size * 0.5
+            # Draw outer gear with teeth
+            teeth = 8
+            outer_r = s
+            inner_r = s * 0.6
+            points = []
+            for i in range(teeth * 2):
+                angle = (i / (teeth * 2)) * 2 * math.pi - math.pi / 2
+                r = outer_r if i % 2 == 0 else inner_r * 1.1
+                px = cx + r * math.cos(angle)
+                py = cy + r * math.sin(angle)
+                points.extend([px, py])
+            points.extend([points[0], points[1]])
+            Line(points=points, width=dp(2))
+            # Center circle
+            Ellipse(pos=(cx - s * 0.3, cy - s * 0.3), size=(s * 0.6, s * 0.6))
 
 
 class GestureButton(IconButton):
@@ -1372,6 +1399,14 @@ class MainScreen(Screen):
         self.youtube_btn.bind(on_release=self.open_youtube)
         bottom_layout.add_widget(self.youtube_btn)
 
+        self.settings_btn = IconButton(
+            icon='settings',
+            size_hint=(None, None),
+            size=(BUTTON_SIZE, BUTTON_SIZE)
+        )
+        self.settings_btn.bind(on_release=self.open_settings)
+        bottom_layout.add_widget(self.settings_btn)
+
         # Right spacer for centering
         bottom_layout.add_widget(Widget(size_hint=(1, 1)))
 
@@ -1419,6 +1454,10 @@ class MainScreen(Screen):
         app = App.get_running_app()
         if app:
             app.show_youtube_dialog()
+
+    def open_settings(self, instance):
+        popup = SettingsPopup()
+        popup.open()
 
     def update_track_info(self, title: str, duration: float):
         self.title_label.text = title
@@ -1898,6 +1937,108 @@ class LyricsPopup(Popup):
         app = App.get_running_app()
         if app:
             app.transcribe_lyrics(self.file_path, self)
+
+
+class SettingsPopup(Popup):
+    """Settings popup for configuring API keys and preferences"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.title = ''
+        self.separator_height = 0
+        self.size_hint = (0.9, 0.5)
+        self.auto_dismiss = True
+        self.background = ''
+        self.background_color = (0, 0, 0, 0)
+
+        container = BoxLayout(orientation='vertical')
+
+        with container.canvas.before:
+            Color(*Theme.GLASS_BG)
+            self._bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[dp(20)])
+        container.bind(
+            pos=lambda *a: setattr(self._bg, 'pos', container.pos),
+            size=lambda *a: setattr(self._bg, 'size', container.size)
+        )
+
+        layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(16))
+
+        # Header
+        header = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        back_btn = IconButton(icon='back', size_hint=(None, None), size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL))
+        back_btn.bind(on_release=lambda x: self.dismiss())
+        header.add_widget(back_btn)
+        header.add_widget(Label(
+            text='Settings',
+            font_size=sp(18),
+            color=Theme.TEXT_PRIMARY,
+            bold=True,
+            size_hint=(1, 1),
+            halign='left',
+            valign='middle'
+        ))
+        layout.add_widget(header)
+
+        # OpenAI API Key input
+        api_section = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(80), spacing=dp(8))
+        api_section.add_widget(Label(
+            text='OpenAI API Key (for transcription)',
+            font_size=sp(13),
+            color=Theme.TEXT_SECONDARY,
+            size_hint=(1, None),
+            height=dp(20),
+            halign='left',
+            valign='middle'
+        ))
+
+        # Text input for API key
+        self.api_input = TextInput(
+            text='',
+            hint_text='sk-...',
+            multiline=False,
+            password=True,
+            size_hint=(1, None),
+            height=dp(44),
+            font_size=sp(14),
+            background_color=Theme.BG_SECONDARY,
+            foreground_color=Theme.TEXT_PRIMARY,
+            cursor_color=Theme.ACCENT,
+            padding=[dp(12), dp(12)]
+        )
+        api_section.add_widget(self.api_input)
+        layout.add_widget(api_section)
+
+        # Load existing API key
+        app = App.get_running_app()
+        if app and app.config_manager.openai_api_key:
+            # Show masked key
+            key = app.config_manager.openai_api_key
+            self.api_input.text = key
+
+        # Save button
+        save_btn = IconButton(icon='folder', is_accent=True, size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
+        save_btn.bind(on_release=self.save_settings)
+
+        btn_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8))
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
+        btn_layout.add_widget(save_btn)
+        btn_layout.add_widget(Widget(size_hint=(1, 1)))
+        layout.add_widget(btn_layout)
+
+        # Spacer
+        layout.add_widget(Widget(size_hint=(1, 1)))
+
+        container.add_widget(layout)
+        self.content = container
+
+    def save_settings(self, instance):
+        """Save settings to config"""
+        app = App.get_running_app()
+        if app:
+            api_key = self.api_input.text.strip()
+            app.config_manager.openai_api_key = api_key
+            app.log('Settings saved')
+            self.dismiss()
 
 
 # ============================================================================
@@ -2422,10 +2563,15 @@ class LuisterApp(App):
         try:
             # Handle synced LRC lyrics
             if self._current_lyrics:
+                # Apply a small offset to sync lyrics better with audio
+                # Positive offset = lyrics appear later, negative = earlier
+                LYRICS_OFFSET = 0.3  # seconds delay for lyrics
+                adjusted_position = position - LYRICS_OFFSET
+
                 # Find the current lyrics line based on position
                 current_idx = -1
                 for i, (timestamp, _) in enumerate(self._current_lyrics):
-                    if timestamp <= position:
+                    if timestamp <= adjusted_position:
                         current_idx = i
                     else:
                         break
@@ -2537,79 +2683,92 @@ class LuisterApp(App):
         threading.Thread(target=fetch_task, daemon=True).start()
 
     def transcribe_lyrics(self, file_path: str, popup: 'LyricsPopup'):
-        """Transcribe lyrics using Whisper AI (runs in background thread)"""
+        """Transcribe lyrics using OpenAI Whisper API (runs in background thread)"""
         app = self
 
         def transcribe_task():
             app.log(f'Transcribing: {Path(file_path).name}')
 
-            # Check for cached transcription
-            audio_path = Path(file_path)
-            cache_path = app.get_lyrics_path(file_path)
-
-            # Try to import whisper
-            try:
-                import whisper
-                whisper_available = True
-            except ImportError:
-                whisper_available = False
-                app.log('Whisper not installed')
-
-            if not whisper_available:
+            # Check if OpenAI API key is configured
+            api_key = app.config_manager.openai_api_key
+            if not api_key:
                 Clock.schedule_once(
                     lambda dt: popup.update_lyrics(
                         '',
-                        'Whisper not available. Add "openai-whisper" to requirements.'
+                        'No API key. Go to Settings (gear icon) to add your OpenAI API key.'
                     ), 0
                 )
                 return
 
             try:
-                # Load model (tiny for mobile to save memory)
-                app.log('Loading Whisper model (tiny)...')
+                import requests
+
                 Clock.schedule_once(
-                    lambda dt: setattr(popup, 'status_label', popup.status_label) or
-                    setattr(popup.status_label, 'text', 'Loading AI model...'), 0
+                    lambda dt: setattr(popup.status_label, 'text', 'Uploading audio...'), 0
                 )
 
-                model_dir = app.config_manager._config_dir / "models"
-                model_dir.mkdir(parents=True, exist_ok=True)
+                # Use OpenAI Whisper API
+                app.log('Using OpenAI Whisper API...')
 
-                try:
-                    model = whisper.load_model("tiny", download_root=str(model_dir))
-                except TypeError:
-                    model = whisper.load_model("tiny")
-
-                app.log('Model loaded, transcribing...')
-                Clock.schedule_once(
-                    lambda dt: setattr(popup.status_label, 'text', 'Transcribing audio...'), 0
-                )
-
-                # Transcribe
-                result = model.transcribe(file_path, language=None)  # Auto-detect language
-
-                # Extract segments and format as LRC
-                segments = result.get('segments', [])
-                if segments:
-                    lrc_lines = []
-                    for seg in segments:
-                        start = seg.get('start', 0)
-                        text = seg.get('text', '').strip()
-                        if text:
-                            mins = int(start // 60)
-                            secs = start % 60
-                            lrc_lines.append(f'[{mins:02d}:{secs:05.2f}]{text}')
-
-                    lyrics_text = '\n'.join(lrc_lines)
-                    app.log(f'Transcribed {len(segments)} segments')
+                # Read audio file
+                with open(file_path, 'rb') as audio_file:
+                    # OpenAI Whisper API endpoint
+                    url = 'https://api.openai.com/v1/audio/transcriptions'
+                    headers = {
+                        'Authorization': f'Bearer {api_key}'
+                    }
+                    files = {
+                        'file': (Path(file_path).name, audio_file, 'audio/mpeg')
+                    }
+                    data = {
+                        'model': 'whisper-1',
+                        'response_format': 'verbose_json',
+                        'timestamp_granularities[]': 'segment'
+                    }
 
                     Clock.schedule_once(
-                        lambda dt: popup.update_lyrics(lyrics_text, f'Transcribed {len(segments)} lines'), 0
+                        lambda dt: setattr(popup.status_label, 'text', 'Transcribing...'), 0
                     )
+
+                    response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
+
+                if response.status_code == 200:
+                    result = response.json()
+                    segments = result.get('segments', [])
+
+                    if segments:
+                        lrc_lines = []
+                        for seg in segments:
+                            start = seg.get('start', 0)
+                            text = seg.get('text', '').strip()
+                            if text:
+                                mins = int(start // 60)
+                                secs = start % 60
+                                lrc_lines.append(f'[{mins:02d}:{secs:05.2f}]{text}')
+
+                        lyrics_text = '\n'.join(lrc_lines)
+                        app.log(f'Transcribed {len(segments)} segments')
+
+                        Clock.schedule_once(
+                            lambda dt: popup.update_lyrics(lyrics_text, f'Transcribed {len(segments)} lines'), 0
+                        )
+                    else:
+                        app.log('No speech detected')
+                        Clock.schedule_once(
+                            lambda dt: popup.update_lyrics('', 'No speech detected in audio'), 0
+                        )
                 else:
-                    app.log('No speech detected')
+                    # API error
+                    error_msg = f'API error: {response.status_code}'
+                    try:
+                        error_data = response.json()
+                        if 'error' in error_data:
+                            error_msg = error_data['error'].get('message', error_msg)[:60]
+                    except Exception:
+                        pass
+                    app.log(f'Transcription failed: {error_msg}')
                     Clock.schedule_once(
-                        lambda dt: popup.update_lyrics('', 'No speech detected in audio'), 0
+                        lambda dt: popup.update_lyrics('', error_msg), 0
                     )
 
             except Exception as e:
