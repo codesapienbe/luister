@@ -1,18 +1,26 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QProgressBar, QListWidget, QListWidgetItem, QMessageBox, QDialog, QComboBox, QDialogButtonBox, QFormLayout
 from PyQt6.QtCore import pyqtSignal
 import threading
+import logging
 from pathlib import Path
 from typing import Any, cast, Dict
 import json
 
-try:
-    import whisper
-    # ensure custom cache directory for whisper models
-    MODEL_ROOT = Path.home() / ".luister" / "models"
-    MODEL_ROOT.mkdir(parents=True, exist_ok=True)
-except ImportError:
-    whisper = None
-    MODEL_ROOT = None
+# Whisper (and its torch dependency) are only imported lazily, in a background
+# thread, the first time the user actually requests lyrics - importing them
+# eagerly would make every app startup pay a heavy, unnecessary CPU/import cost.
+MODEL_ROOT = Path.home() / ".luister" / "models"
+
+
+def _load_whisper():
+    """Import whisper on first use. Returns the module, or None if unavailable."""
+    try:
+        import whisper
+        MODEL_ROOT.mkdir(parents=True, exist_ok=True)
+        return whisper
+    except ImportError:
+        return None
+
 
 # threshold for ignoring transcription when no speech detected
 NO_SPEECH_THRESHOLD = 0.5
@@ -22,6 +30,9 @@ class LyricsWidget(QWidget):
 
     segments_ready = pyqtSignal(object)
     closed = pyqtSignal()
+    # Emitted (from the background prep thread) once the language has been
+    # detected and it's safe to show the options dialog on the GUI thread.
+    _prep_ready = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -34,6 +45,7 @@ class LyricsWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.list_widget)
+        self._whisper = None
         self._model = None
         self.segments: list[tuple[float, float, str]] = []
         # Transcription state
@@ -41,6 +53,7 @@ class LyricsWidget(QWidget):
         self._current_audio_file: str | None = None
         # Connect signal to populate segments when ready
         self.segments_ready.connect(self._on_segments_ready)
+        self._prep_ready.connect(self._on_prep_ready)
 
     def load_lyrics(self, file_path: str):
         """Detect language, show dropdown to select language, then transcribe audio and extract segments."""
@@ -61,34 +74,77 @@ class LyricsWidget(QWidget):
         if self._transcribing and self._current_audio_file == str(audio_path):
             return
 
-        if whisper is None:
-            self.list_widget.addItem("Error: whisper library not installed.")
+        self._transcribing = True
+        self._current_audio_file = str(audio_path)
+
+        # Loading whisper/torch and running language detection is CPU-heavy and can
+        # take many seconds - do all of it off the GUI thread so the rest of the
+        # app (playback controls, etc.) stays responsive while it runs.
+        def prepare():
+            whisper = self._whisper or _load_whisper()
+            if whisper is None:
+                self._prep_ready.emit({
+                    "error": "Error: whisper library not installed.",
+                    "file_path": file_path,
+                    "cache_path": cache_path,
+                })
+                return
+            self._whisper = whisper
+
+            model = self._model
+            if model is None:
+                try:
+                    try:
+                        model = whisper.load_model("tiny", download_root=str(MODEL_ROOT))  # type: ignore
+                    except TypeError:
+                        model = whisper.load_model("tiny")  # type: ignore
+                    self._model = model
+                except Exception:
+                    logging.exception("Failed to load whisper 'tiny' model")
+                    self._prep_ready.emit({
+                        "error": "Error: failed to load whisper model.",
+                        "file_path": file_path,
+                        "cache_path": cache_path,
+                    })
+                    return
+
+            # detect language
+            language = "en"
+            probs: Dict[str, Any] = {language: 1.0}
+            try:
+                audio = whisper.load_audio(file_path)  # type: ignore
+                audio = whisper.pad_or_trim(audio)  # type: ignore
+                mel = whisper.log_mel_spectrogram(audio).to(model.device)  # type: ignore
+                detect = model.detect_language(mel)  # type: ignore
+                probs_raw = detect[1]
+                probs = cast(Dict[str, Any], probs_raw)
+                language = max(probs.items(), key=lambda kv: kv[1])[0]
+            except Exception:
+                pass
+
+            self._prep_ready.emit({
+                "probs": probs,
+                "language": language,
+                "file_path": file_path,
+                "cache_path": cache_path,
+            })
+
+        threading.Thread(target=prepare, daemon=True).start()
+
+    def _on_prep_ready(self, prep: dict):
+        """GUI-thread slot: show the transcription options dialog once prep work is done."""
+        file_path = prep["file_path"]
+        cache_path = prep["cache_path"]
+
+        if "error" in prep:
+            self._transcribing = False
+            self._current_audio_file = None
+            self.list_widget.addItem(prep["error"])
+            self.segments_ready.emit([])
             return
 
-        # ensure tiny model loaded
-        if self._model is None:
-            try:
-                if MODEL_ROOT is not None:
-                    self._model = whisper.load_model("tiny", download_root=str(MODEL_ROOT))  # type: ignore
-                else:
-                    self._model = whisper.load_model("tiny")  # type: ignore
-            except TypeError:
-                self._model = whisper.load_model("tiny")  # type: ignore
-
-        # detect language
-        language = "en"
-        # initialize fallback probabilities
-        probs: Dict[str, Any] = {language: 1.0}
-        try:
-            audio = whisper.load_audio(file_path)  # type: ignore
-            audio = whisper.pad_or_trim(audio)  # type: ignore
-            mel = whisper.log_mel_spectrogram(audio).to(self._model.device)  # type: ignore
-            detect = self._model.detect_language(mel)  # type: ignore
-            probs_raw = detect[1]
-            probs = cast(Dict[str, Any], probs_raw)
-            language = max(probs.items(), key=lambda kv: kv[1])[0]
-        except Exception:
-            pass
+        probs = prep["probs"]
+        language = prep["language"]
 
         # show dialog for language and model size selection
         lang_codes = sorted(probs.keys(), key=lambda k: -probs.get(k, 0))
@@ -112,24 +168,22 @@ class LyricsWidget(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             # User cancelled transcription options — notify listeners with empty segments
             # so any pending playback (set by the caller) can proceed.
+            self._transcribing = False
+            self._current_audio_file = None
             self.segments_ready.emit([])
             return
         language = lang_combo.currentText()
         model_size = model_combo.currentText()
+        whisper = self._whisper
 
         # transcription in background using selected language
         def run_transcribe():
             try:
-                self._transcribing = True
-                self._current_audio_file = str(audio_path)
                 model = self._model
                 # load user-selected model size for transcription
                 if model_size != "tiny":
                     try:
-                        if MODEL_ROOT is not None:
-                            model = whisper.load_model(model_size, download_root=str(MODEL_ROOT))  # type: ignore
-                        else:
-                            model = whisper.load_model(model_size)  # type: ignore
+                        model = whisper.load_model(model_size, download_root=str(MODEL_ROOT))  # type: ignore
                     except TypeError:
                         model = whisper.load_model(model_size)  # type: ignore
                 # perform transcription with selected language

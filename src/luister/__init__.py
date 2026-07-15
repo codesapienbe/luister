@@ -420,6 +420,18 @@ QSlider::handle:horizontal {{
                     self.playlist_dock.setMinimumHeight(350)
                 except Exception:
                     pass
+                # Stack lyrics above the song list, sized to half its height
+                try:
+                    if self.lyrics_dock is not None:
+                        self.splitDockWidget(self.lyrics_dock, self.playlist_dock, Qt.Orientation.Vertical)
+                        song_list_height = self.playlist_dock.minimumHeight()
+                        self.resizeDocks(
+                            [self.lyrics_dock, self.playlist_dock],
+                            [song_list_height // 2, song_list_height],
+                            Qt.Orientation.Vertical,
+                        )
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -492,20 +504,6 @@ QSlider::handle:horizontal {{
         mgr = get_manager()
         mgr.register(self)
 
-        # pending playback flag for lyrics sync
-        self._pending_play_when_lyrics_loaded = False
-        # connect handler once lyrics created
-        orig_ensure_lyrics = self._ensure_lyrics
-        def patched_ensure_lyrics():
-            orig_ensure_lyrics()
-            if self.lyrics_dock is not None:
-                try:
-                    widget = self.lyrics_dock.widget()
-                    if isinstance(widget, LyricsWidget):
-                        widget.segments_ready.connect(self._on_lyrics_ready)  # type: ignore
-                except Exception:
-                    pass
-        self._ensure_lyrics = patched_ensure_lyrics
 
         # -- System Tray Icon Setup --
         # Create a tray icon using the app's custom icon
@@ -1448,20 +1446,8 @@ QSlider::handle:horizontal {{
 
     def set_lyrics_visible(self, visible: bool):
         if visible:
-            widget = self.lyrics_dock.widget()
-            from luister.lyrics import LyricsWidget
-            if isinstance(widget, LyricsWidget):
-                if self.current_index >= 0 and self.current_index < len(self.playlist_urls):
-                    current_file = self.playlist_urls[self.current_index].toLocalFile()
-                    try:
-                        already_transcribing = getattr(widget, '_transcribing', False)
-                        current_target = getattr(widget, '_current_audio_file', None)
-                    except Exception:
-                        already_transcribing = False
-                        current_target = None
-                    # Avoid starting a duplicate transcription for the same file
-                    if not (already_transcribing and current_target == current_file):
-                        widget.load_lyrics(current_file)
+            # Lyrics are loaded via the "Download Lyrics" context menu action only,
+            # never automatically when the dock is shown.
             self._fade_dock(self.lyrics_dock, fade_in=True)
         else:
             self._fade_dock(self.lyrics_dock, fade_in=False)
@@ -1643,19 +1629,6 @@ QSlider::handle:horizontal {{
         app = QApplication.instance()
         if app is not None:
             app.exit(1)  # type: ignore[attr-defined]
-
-    def _on_lyrics_ready(self, segments):
-        """Slot called when lyrics segments are loaded; resume playback if pending."""
-        if getattr(self, '_pending_play_when_lyrics_loaded', False):
-            self._pending_play_when_lyrics_loaded = False
-            # hide progress bar
-            if self.lyrics_dock is not None:
-                widget = self.lyrics_dock.widget()
-                from luister.lyrics import LyricsWidget
-                if isinstance(widget, LyricsWidget):
-                    widget.hide_progress()  # type: ignore
-            self.Player.play()
-            self.update_play_stop_icon()
 
     def closeEvent(self, event):
         """On window close (X) perform a graceful shutdown.
