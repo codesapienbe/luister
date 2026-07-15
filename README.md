@@ -72,9 +72,37 @@ git clone https://github.com/codesapienbe/luister
 cd luister
 ```
 
-### 2. Run the App
+### 2. Install Dependencies (Local Development)
 
+```bash
+make install
 ```
+
+### 3. Run the App (Local Development)
+
+```bash
+make run
+```
+
+### 4. Build Desktop Executables
+
+Build for the current OS:
+
+```bash
+make bundle
+```
+
+Build for a specific target:
+
+```bash
+make bundle PLATFORM=macos
+make bundle PLATFORM=windows
+make bundle PLATFORM=linux
+```
+
+### 5. Quick Run from a Published Wheel
+
+```bash
 uvx run --from https://github.com/codesapienbe/luister/releases/download/v2025.07.06.1321/luister-0.1.0-py3-none-any.whl
 ```
 
@@ -90,4 +118,3 @@ No extra commands needed! The app will launch, and you can start enjoying your m
 **Tip:** If you have any questions or want to contribute, check out the repository’s README or open an issue on GitHub.
 
 >> **Happy listening!**
-

@@ -23,8 +23,9 @@ endif
 
 PROJECT_NAME := luister
 VERSION := 0.1.0
+PLATFORM ?= auto
 
-.PHONY: all clean install dev build build-mac build-windows build-linux \
+.PHONY: all clean install dev bundle bundle-macos bundle-windows bundle-linux \
         dmg appimage deb installer run test lint help \
         android android-setup android-debug android-release android-deploy android-run android-logcat android-clean \
         ios ios-setup ios-build ios-xcode ios-clean
@@ -36,17 +37,17 @@ help:
 	@echo "Luister Build System (using uv)"
 	@echo ""
 	@echo "Development:"
-	@echo "  make install    - Install package in development mode"
+	@echo "  make install    - Install/sync dependencies with uv"
 	@echo "  make dev        - Install with development dependencies"
-	@echo "  make run        - Run the desktop application"
+	@echo "  make run        - Run the desktop application (uv run luister)"
 	@echo "  make test       - Run tests"
 	@echo "  make lint       - Run linters"
 	@echo ""
 	@echo "Desktop Building:"
-	@echo "  make build      - Build standalone executable for current platform"
-	@echo "  make build-mac  - Build macOS app bundle"
-	@echo "  make build-win  - Build Windows executable"
-	@echo "  make build-linux - Build Linux executable"
+	@echo "  make bundle      - Build executable for PLATFORM=auto|macos|windows|linux"
+	@echo "  make bundle-macos - Build macOS executable"
+	@echo "  make bundle-windows - Build Windows executable"
+	@echo "  make bundle-linux - Build Linux executable"
 	@echo ""
 	@echo "Desktop Packaging:"
 	@echo "  make dmg        - Create macOS DMG (requires macOS)"
@@ -76,11 +77,7 @@ help:
 
 # Development targets
 install:
-ifdef UV
-	uv pip install -e .
-else
-	$(PYTHON) -m pip install -e .
-endif
+	uv sync
 
 dev:
 ifdef UV
@@ -90,7 +87,7 @@ else
 endif
 
 run:
-	$(PYTHON_CMD) -m luister
+	uv run luister
 
 test:
 	$(PYTHON_CMD) -m pytest tests/ -v
@@ -100,30 +97,30 @@ lint:
 	$(PYTHON_CMD) -m black --check src/
 
 # Build targets
-build:
-	$(PYTHON_CMD) packaging/build.py --clean
+bundle:
+	uv run python packaging/build.py --clean --platform $(PLATFORM)
 
-build-mac: build
-	@echo "macOS build complete"
+bundle-macos:
+	$(MAKE) bundle PLATFORM=macos
 
-build-win: build
-	@echo "Windows build complete"
+bundle-windows:
+	$(MAKE) bundle PLATFORM=windows
 
-build-linux: build
-	@echo "Linux build complete"
+bundle-linux:
+	$(MAKE) bundle PLATFORM=linux
 
 # Packaging targets
-dmg: build
-	$(PYTHON_CMD) packaging/build.py --dmg
+dmg:
+	uv run python packaging/build.py --clean --platform macos --dmg
 
-appimage: build
-	$(PYTHON_CMD) packaging/build.py --appimage
+appimage:
+	uv run python packaging/build.py --clean --platform linux --appimage
 
-deb: build
-	$(PYTHON_CMD) packaging/build.py --deb
+deb:
+	uv run python packaging/build.py --clean --platform linux --deb
 
-installer: build
-	$(PYTHON_CMD) packaging/build.py --installer
+installer:
+	uv run python packaging/build.py --clean --platform windows --installer
 
 # Icon generation (requires ImageMagick or Pillow)
 icons:

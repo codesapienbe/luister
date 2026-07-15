@@ -174,7 +174,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build executable
-        run: make build
+        run: make bundle PLATFORM=linux
 
       - name: Create AppImage
         run: make appimage
