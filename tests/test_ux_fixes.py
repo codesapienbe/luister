@@ -50,7 +50,8 @@ def test_accepts_valid_youtube_urls(url):
 
 @pytest.mark.parametrize(
     "url",
-    ["", "not a url", "https://vimeo.com/12345", "ftp://youtube.com/x", "youtube.com"],
+    ["", "not a url", "https://vimeo.com/12345", "ftp://youtube.com/x",
+     "youtube.com"],
 )
 def test_rejects_non_youtube_urls(url):
     assert not luister._is_supported_media_url(url)
@@ -149,7 +150,9 @@ def test_lyrics_choice_persists(ui, tmp_path, monkeypatch):
         second._gui_state_frozen = True
 
 
-def test_stale_pre_migration_state_does_not_force_lyrics_open(ui, tmp_path, monkeypatch):
+def test_stale_pre_migration_state_does_not_force_lyrics_open(
+    ui, tmp_path, monkeypatch
+):
     """Old state files recorded lyrics=1 because the app forced it open."""
     state = tmp_path / ".luister" / "states" / "gui.txt"
     state.parent.mkdir(parents=True, exist_ok=True)
@@ -229,7 +232,8 @@ def test_track_title_survives_position_updates(ui):
 
 @pytest.mark.parametrize(
     "ms,expected",
-    [(0, "00:00"), (5_000, "00:05"), (65_000, "01:05"), (3_725_000, "1:02:05")],
+    [(0, "00:00"), (5_000, "00:05"), (65_000, "01:05"),
+     (3_725_000, "1:02:05")],
 )
 def test_duration_formatting(ms, expected):
     assert luister.UI._format_ms(ms) == expected

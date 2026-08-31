@@ -26,7 +26,8 @@ PIN_RE = re.compile(r'(?P<prefix>"yt-dlp>=)(?P<version>[^"]+)(?P<suffix>")')
 
 def latest_version() -> str:
     request = urllib.request.Request(
-        PYPI_URL, headers={"Accept": "application/json", "User-Agent": "luister-ci"}
+        PYPI_URL,
+        headers={"Accept": "application/json", "User-Agent": "luister-ci"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)["info"]["version"]
@@ -72,7 +73,9 @@ def main() -> int:
         return 0
 
     updated = PIN_RE.sub(
-        lambda m: f"{m.group('prefix')}{latest}{m.group('suffix')}", content, count=1
+        lambda m: f"{m.group('prefix')}{latest}{m.group('suffix')}",
+        content,
+        count=1,
     )
     pyproject.write_text(updated, encoding="utf-8")
     emit(updated="true", current=current, latest=latest)

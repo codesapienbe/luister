@@ -15,7 +15,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-# "Me at the zoo" - the oldest video on YouTube, 19 seconds, unlikely to vanish.
+# "Me at the zoo" - the oldest video on YouTube, 19 seconds long and
+# unlikely to vanish.
 TEST_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 
@@ -49,7 +50,8 @@ def main() -> int:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(TEST_URL, download=False)
                 if not info or not info.get("title"):
-                    print("FAIL: metadata extraction returned nothing", file=sys.stderr)
+                    print("FAIL: metadata extraction returned nothing",
+                          file=sys.stderr)
                     return 1
                 print(f"metadata OK: {info['title']}")
 
@@ -59,12 +61,17 @@ def main() -> int:
             print(f"download failed: {message}", file=sys.stderr)
             transient = any(
                 marker in message.lower()
-                for marker in ("timed out", "temporary failure", "connection reset",
-                               "network is unreachable", "sign in to confirm")
+                for marker in ("timed out", "temporary failure",
+                               "connection reset",
+                               "network is unreachable",
+                               "sign in to confirm")
             )
             return 75 if transient else 1
 
-        produced = [p for p in out.iterdir() if p.is_file() and p.stat().st_size > 0]
+        produced = [
+            p for p in out.iterdir()
+            if p.is_file() and p.stat().st_size > 0
+        ]
         if not produced:
             print("FAIL: no output file was produced", file=sys.stderr)
             return 1
