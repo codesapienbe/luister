@@ -1,0 +1,84 @@
+name: Bump yt-dlp
+
+# YouTube breaks older yt-dlp builds regularly - metadata keeps resolving while
+# the actual media download starts returning "HTTP Error 403: Forbidden". This
+# job watches PyPI and raises a PR whenever a newer release is available, so
+# the player does not silently rot between manual dependency reviews.
+
+on:
+  schedule:
+    # Daily at 05:17 UTC. yt-dlp ships frequently and the check is cheap.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bump-ytdlp
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check PyPI for a newer yt-dlp
+        id: bump
+        run: python scripts/bump_ytdlp.py
+
+      - name: Install system dependencies
+        if: steps.bump.outputs.updated == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libportaudio2 portaudio19-dev libegl1 libxkbcommon0
+
+      - name: Install project with the new pin
+        if: steps.bump.outputs.updated == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify yt-dlp can still extract and download
+        if: steps.bump.outputs.updated == 'true'
+        run: python scripts/verify_ytdlp.py
+
+      - name: Run test suite
+        if: steps.bump.outputs.updated == 'true'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests -q
+
+      - name: Open pull request
+        if: steps.bump.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "build: bump yt-dlp to ${{ steps.bump.outputs.latest }}"
+          branch: chore/bump-yt-dlp
+          delete-branch: true
+          title: "Bump yt-dlp to ${{ steps.bump.outputs.latest }}"
+          labels: dependencies
+          body: |
+            Automated bump of the `yt-dlp` floor pin.
+
+            | | |
+            |---|---|
+            | Previous | `${{ steps.bump.outputs.current }}` |
+            | New | `${{ steps.bump.outputs.latest }}` |
+
+            Raised by `.github/workflows/bump-ytdlp.yml`.
+
+            YouTube periodically breaks older extractor builds. The failure mode
+            is that metadata still resolves but the media download returns
+            `HTTP Error 403: Forbidden`, so the app looks broken while yt-dlp
+            reports no import error.
+
+            The live extract-and-download check and the test suite both passed
+            against the new version on this branch.

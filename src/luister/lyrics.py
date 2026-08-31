@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QProgressBar, QListWidget, QLi
 from PyQt6.QtCore import pyqtSignal
 import threading
 import logging
+from bisect import bisect_right
 from pathlib import Path
 from typing import Any, cast, Dict
 import json
@@ -48,6 +49,8 @@ class LyricsWidget(QWidget):
         self._whisper = None
         self._model = None
         self.segments: list[tuple[float, float, str]] = []
+        self._segment_starts: list[float] = []
+        self._active_index: int = -1
         # Transcription state
         self._transcribing = False
         self._current_audio_file: str | None = None
@@ -217,17 +220,44 @@ class LyricsWidget(QWidget):
             (s.get("start", 0.0), s.get("end", 0.0), s.get("text", ""))
             for s in segments
         ]
+        self._segment_starts = [start for start, _, _ in self.segments]
+        self._active_index = -1
         self.list_widget.clear()
         for _, _, text in self.segments:
             self.list_widget.addItem(text)
 
     def update_position(self, ms: int):
-        """Highlight and scroll to the current lyric line based on playback position."""
+        """Highlight and scroll to the current lyric line.
+
+        This is called on every positionChanged tick (roughly ten times a
+        second). The previous implementation rescanned the whole segment list
+        and re-scrolled every single time, which got visibly janky on long
+        transcripts; now it binary-searches and only touches the widget when
+        the active line actually changes.
+        """
+        if not self.segments:
+            return
+
         sec = ms / 1000.0
-        idx = next((i for i, (start, end, _) in enumerate(self.segments) if start <= sec <= end), None)
-        if idx is not None and 0 <= idx < self.list_widget.count():
+
+        # segments are in ascending start order, so bisect the start times
+        idx = bisect_right(self._segment_starts, sec) - 1
+        if idx < 0:
+            return
+
+        start, end, _ = self.segments[idx]
+        if not (start <= sec <= end):
+            return
+
+        if idx == self._active_index:
+            return
+
+        if 0 <= idx < self.list_widget.count():
+            self._active_index = idx
             self.list_widget.setCurrentRow(idx)
-            self.list_widget.scrollToItem(self.list_widget.currentItem())
+            item = self.list_widget.item(idx)
+            if item is not None:
+                self.list_widget.scrollToItem(item)
 
     def show_progress(self):
         """Show the progress bar while transcription is running."""
