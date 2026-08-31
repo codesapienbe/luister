@@ -49,6 +49,22 @@ jobs:
         run: make test
         continue-on-error: true
 
+      # Guards against the failure that made YouTube links stop working:
+      # yt-dlp imports fine and resolves metadata, but the media transfer 403s.
+      # Exit code 75 means the runner could not reach YouTube, which is not a
+      # reason to fail the build.
+      - name: Verify yt-dlp can still download
+        run: |
+          set +e
+          python scripts/verify_ytdlp.py
+          code=$?
+          set -e
+          if [ "$code" -eq 75 ]; then
+            echo "::warning::yt-dlp check skipped - YouTube unreachable from runner"
+            exit 0
+          fi
+          exit "$code"
+
   # Build for macOS (only on tags)
   build-macos:
     runs-on: macos-latest

@@ -41,10 +41,10 @@ class SongListWidget(QListWidget):
         if item is None:
             return
 
-        # Get the index from the item text (format: "1. filename.mp3")
-        try:
-            index = int(item.text().split('.')[0]) - 1
-        except (ValueError, IndexError):
+        # Use the widget's own row index rather than parsing the display text,
+        # which is unreliable once a status prefix has been prepended.
+        index = self.row(item)
+        if index < 0:
             return
 
         menu = QMenu(self)
@@ -118,6 +118,10 @@ class PlaylistUI(QMainWindow):
         # Drag-and-drop capable song list
         self.list_songs = SongListWidget(self)
         self.list_songs.setObjectName("list_songs")
+        # Long track names used to force a horizontal scrollbar; elide instead
+        # and keep the full name available on hover.
+        self.list_songs.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list_songs.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         layout.addWidget(self.list_songs, stretch=1)
 
         # Download progress section (at bottom of playlist)
@@ -161,10 +165,13 @@ class PlaylistUI(QMainWindow):
         for _btn in (self.pl_back_btn, self.pl_play_btn, self.pl_pause_btn, self.pl_stop_btn, self.pl_next_btn, self.pl_download_btn):
             _btn.hide()
 
-        # Ensure stylesheet cleans any inline defaults
-        self._clear_inline_styles()
+        # NOTE: _clear_inline_styles() used to run here, which stripped the
+        # palette-aware stylesheets set above and left the list unreadable in
+        # dark mode. It is now only applied to widgets we did not style.
 
-        self.show()
+        # No show() here: this widget is re-parented into a QDockWidget by the
+        # main window, and showing it first made a stray top-level window flash
+        # on startup.
 
     # ---- Download progress methods ----
 
@@ -224,6 +231,13 @@ class PlaylistUI(QMainWindow):
         for index in list(self._download_status.keys()):
             self.set_item_download_status(index, '')
         self._download_status.clear()
+
+    def addItemWithTooltip(self, text: str):
+        """Add a row whose full text stays reachable via its tooltip."""
+        from PyQt6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(text)
+        item.setToolTip(text)
+        self.list_songs.addItem(item)
 
     def handle_dropped_urls(self, urls):
         paths = [url.toLocalFile() for url in urls]
