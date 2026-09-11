@@ -176,3 +176,6 @@ mobile/.buildozer/
 mobile/bin/
 *.apk
 mobile/.DS_Store
+
+# graphify knowledge graphs
+graphify-out/
