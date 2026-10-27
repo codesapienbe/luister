@@ -1715,14 +1715,6 @@ class PlaylistScreen(Screen):
         # Header
         header = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(8), spacing=dp(12))
 
-        back_btn = IconButton(
-            icon='back',
-            size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
-        )
-        back_btn.bind(on_release=self.go_back)
-        header.add_widget(back_btn)
-
         header.add_widget(Label(
             text='Playlist',
             size_hint=(1, 1),
@@ -1875,7 +1867,6 @@ class YouTubeDownloadPopup(Popup):
         self.title = ''
         self.separator_height = 0
         self.size_hint = (0.9, 0.45)
-        self.auto_dismiss = False
         self.background = ''
         self.background_color = (0, 0, 0, 0)
 
@@ -1937,10 +1928,6 @@ class YouTubeDownloadPopup(Popup):
 
         # Left spacer
         btn_layout.add_widget(Widget(size_hint=(1, 1)))
-
-        self.cancel_btn = IconButton(icon='back', size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
-        self.cancel_btn.bind(on_release=lambda x: self.dismiss())
-        btn_layout.add_widget(self.cancel_btn)
 
         self.download_btn = IconButton(icon='youtube', is_accent=True, size_hint=(None, None), size=(BUTTON_SIZE, BUTTON_SIZE))
         self.download_btn.bind(on_release=self.start_download)
@@ -2006,12 +1993,8 @@ class LyricsPopup(Popup):
 
         layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
 
-        # Header with title and close button
+        # Header (tap outside or use the system back gesture to close)
         header = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
-
-        back_btn = IconButton(icon='back', size_hint=(None, None), size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL))
-        back_btn.bind(on_release=lambda x: self.dismiss())
-        header.add_widget(back_btn)
 
         header.add_widget(Label(
             text=song_title[:40] + ('...' if len(song_title) > 40 else ''),
@@ -2305,7 +2288,21 @@ class LuisterApp(App):
         sm.add_widget(self.main_screen)
         sm.add_widget(self.playlist_screen)
 
+        Window.bind(on_keyboard=self._on_key)
         return sm
+
+    def _on_key(self, window, key, *args):
+        """System back gesture / Esc: close a popup, else leave the playlist."""
+        if key != 27:
+            return False
+        popups = [w for w in window.children if isinstance(w, Popup)]
+        if popups:
+            popups[0].dismiss()
+            return True
+        if self.root and self.root.current == 'playlist':
+            self.playlist_screen.go_back(None)
+            return True
+        return False
 
     def _request_android_permissions(self):
         """Ask for audio library access; rescan music once the user answers."""

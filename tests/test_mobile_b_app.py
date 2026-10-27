@@ -160,7 +160,7 @@ def test_youtube_popup_flow(app, monkeypatch):
     assert not pop.download_btn.disabled and pop.status_label.text == 'bad'
     pop.open()
     pop.download_complete(True, 'ok')
-    click(pop.cancel_btn)
+    pop.dismiss()
 
     m.App._running_app = None
     click(pop.download_btn)  # no app: nothing happens
@@ -782,3 +782,23 @@ def test_module_entrypoint(monkeypatch):
     monkeypatch.setattr(m.App, 'run', lambda self: ran.append(self))
     runpy.run_path(m.__file__, run_name='__main__')
     assert len(ran) == 1
+
+
+def test_back_key(app):
+    class Win:
+        children = []
+
+    win = Win()
+    assert app._on_key(win, 13) is False  # not the back key
+    app.root.current = 'main'
+    assert app._on_key(win, 27) is False  # nothing to close: system default
+    app.root.current = 'playlist'
+    assert app._on_key(win, 27) is True and app.root.current == 'main'
+    app.root = None
+    assert app._on_key(win, 27) is False
+
+    closed = []
+    popup = m.YouTubeDownloadPopup()
+    popup.dismiss = lambda *a: closed.append(1)
+    win.children = [popup]
+    assert app._on_key(win, 27) is True and closed == [1]
