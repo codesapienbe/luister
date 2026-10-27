@@ -123,11 +123,20 @@ def url_quote(s: str) -> str:
 class AndroidMediaPlayer:
     """Wrapper for Android's native MediaPlayer - supports m4a, mp3, ogg, etc."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, on_complete=None):
         from jnius import autoclass
         self.MediaPlayer = autoclass('android.media.MediaPlayer')
         self._player = self.MediaPlayer()
         self._player.setDataSource(path)
+        # Keep the CPU awake while playing so the track survives the screen locking.
+        activity = autoclass('org.kivy.android.PythonActivity').mActivity
+        self._player.setWakeMode(activity, 1)  # PowerManager.PARTIAL_WAKE_LOCK
+        # The Kivy loop is frozen while the app is in the background, so track
+        # changes must be driven by the player itself rather than a Clock tick.
+        self._listener = None
+        if on_complete is not None:
+            self._listener = _make_completion_listener(on_complete)
+            self._player.setOnCompletionListener(self._listener)
         self._player.prepare()
         self._length = self._player.getDuration() / 1000.0  # Convert ms to seconds
         self._volume = 1.0
@@ -178,13 +187,129 @@ class AndroidMediaPlayer:
             pass
 
 
-def load_audio(path: str, logger=None):
+def _make_completion_listener(callback):
+    """Build a MediaPlayer.OnCompletionListener that calls callback()."""
+    from jnius import PythonJavaClass, java_method
+
+    class CompletionListener(PythonJavaClass):
+        __javainterfaces__ = ['android/media/MediaPlayer$OnCompletionListener']
+        __javacontext__ = 'app'
+
+        @java_method('(Landroid/media/MediaPlayer;)V')
+        def onCompletion(self, player):
+            callback()
+
+    return CompletionListener()
+
+
+class AndroidMediaNotification:
+    """Playback notification with previous / play-pause / next actions.
+
+    Actions are delivered through a broadcast receiver that lives on the Android
+    side, so they keep working while the Kivy loop is paused (screen locked).
+    """
+
+    CHANNEL_ID = 'luister_playback'
+    NOTIFICATION_ID = 1
+    ACTIONS = {
+        'prev': 'be.codesapien.luister.action.PREV',
+        'toggle': 'be.codesapien.luister.action.TOGGLE',
+        'next': 'be.codesapien.luister.action.NEXT',
+    }
+
+    def __init__(self, on_action):
+        from jnius import autoclass
+        from android.broadcast import BroadcastReceiver
+
+        self._on_action = on_action
+        self._autoclass = autoclass
+        self._ctx = autoclass('org.kivy.android.PythonActivity').mActivity
+        self._pkg = self._ctx.getPackageName()
+        self._sdk = autoclass('android.os.Build$VERSION').SDK_INT
+        self._nm = self._ctx.getSystemService('notification')
+        if self._sdk >= 26:
+            channel = autoclass('android.app.NotificationChannel')(
+                self.CHANNEL_ID, 'Playback', 2)  # IMPORTANCE_LOW: no sound/popup
+            self._nm.createNotificationChannel(channel)
+
+        self._receiver = BroadcastReceiver(
+            self._on_broadcast, actions=list(self.ACTIONS.values()))
+        handler_thread = autoclass('android.os.HandlerThread')('luister-media')
+        handler_thread.start()
+        self._handler_thread = handler_thread
+        handler = autoclass('android.os.Handler')(handler_thread.getLooper())
+        if self._sdk >= 33:
+            # Android 14+ requires an explicit exported flag for runtime receivers.
+            self._ctx.registerReceiver(
+                self._receiver.receiver, self._receiver.receiver_filter,
+                None, handler, 4)  # RECEIVER_NOT_EXPORTED
+        else:
+            self._ctx.registerReceiver(
+                self._receiver.receiver, self._receiver.receiver_filter, None, handler)
+
+    def _on_broadcast(self, context, intent):
+        action = intent.getAction()
+        for name, full in self.ACTIONS.items():
+            if action == full:
+                self._on_action(name)
+                return
+
+    def _pending(self, action):
+        ac = self._autoclass
+        intent = ac('android.content.Intent')(action)
+        intent.setPackage(self._pkg)
+        flags = 134217728 | 67108864  # FLAG_UPDATE_CURRENT | FLAG_IMMUTABLE
+        return ac('android.app.PendingIntent').getBroadcast(
+            self._ctx, 0, intent, flags)
+
+    def _action(self, icon_name, label, action):
+        ac = self._autoclass
+        res = getattr(ac('android.R$drawable'), icon_name)
+        icon = ac('android.graphics.drawable.Icon').createWithResource(self._pkg, res)
+        # jnius will not coerce a Python str to the CharSequence this constructor takes.
+        return ac('android.app.Notification$Action$Builder')(
+            icon, ac('java.lang.String')(label), self._pending(action)).build()
+
+    def show(self, title: str, playing: bool):
+        ac = self._autoclass
+        builder = ac('android.app.Notification$Builder')(self._ctx, self.CHANNEL_ID)
+        builder.setSmallIcon(self._ctx.getApplicationInfo().icon)
+        builder.setContentTitle(title)
+        builder.setContentText('Luister')
+        builder.setOngoing(playing)
+        builder.setOnlyAlertOnce(True)
+        builder.setShowWhen(False)
+        builder.setVisibility(1)  # VISIBILITY_PUBLIC: controls on the lock screen
+        launch = self._ctx.getPackageManager().getLaunchIntentForPackage(self._pkg)
+        builder.setContentIntent(ac('android.app.PendingIntent').getActivity(
+            self._ctx, 0, launch, 67108864))
+        builder.addAction(self._action(
+            'ic_media_previous', 'Previous', self.ACTIONS['prev']))
+        builder.addAction(self._action(
+            'ic_media_pause' if playing else 'ic_media_play',
+            'Pause' if playing else 'Play', self.ACTIONS['toggle']))
+        builder.addAction(self._action('ic_media_next', 'Next', self.ACTIONS['next']))
+        style = ac('android.app.Notification$MediaStyle')()
+        style.setShowActionsInCompactView(0, 1, 2)
+        builder.setStyle(style)
+        self._nm.notify(self.NOTIFICATION_ID, builder.build())
+
+    def cancel(self):
+        self._nm.cancel(self.NOTIFICATION_ID)
+        try:
+            self._ctx.unregisterReceiver(self._receiver.receiver)
+        except Exception:
+            pass
+        self._handler_thread.quitSafely()
+
+
+def load_audio(path: str, logger=None, on_complete=None):
     """Load audio file - uses Android MediaPlayer on Android, SoundLoader elsewhere"""
     if platform == 'android':
         try:
             if logger:
                 logger(f'Using Android MediaPlayer')
-            player = AndroidMediaPlayer(path)
+            player = AndroidMediaPlayer(path, on_complete=on_complete)
             if logger:
                 logger(f'MediaPlayer ready: {player.length:.1f}s')
             return player
@@ -2112,6 +2237,11 @@ class LuisterApp(App):
         self._update_event = None
         self._download_thread: Optional[threading.Thread] = None
 
+        # Android media notification / background playback
+        self._notification: Optional[AndroidMediaNotification] = None
+        self._transport_lock = threading.RLock()
+        self._ui_track_path: Optional[str] = None
+
         # Lyrics management
         self._lyrics_dir = self.config_manager._config_dir / "lyrics"
         self._current_lyrics: List[tuple] = []  # List of (timestamp_seconds, text)
@@ -2154,15 +2284,121 @@ class LuisterApp(App):
         perm = (Permission.READ_MEDIA_AUDIO if api_version >= 33
                 else Permission.READ_EXTERNAL_STORAGE)
 
+        # Android 13+ also needs a runtime grant to show the playback notification.
+        wanted = [perm]
+        if api_version >= 33:
+            wanted.append('android.permission.POST_NOTIFICATIONS')
+
         def on_result(permissions, grants):
-            if all(grants) and not self.playlist:
+            # Only the audio grant matters for scanning; notifications are optional.
+            if grants[0] and not self.playlist:
                 Clock.schedule_once(lambda dt: self.scan_music_directories(), 0)
 
-        request_permissions([perm], on_result)
+        request_permissions(wanted, on_result)
+
+    def _setup_media_notification(self):
+        try:
+            self._notification = AndroidMediaNotification(self._on_notification_action)
+        except Exception as e:
+            self.log(f'Notification unavailable: {e}')
+            self._notification = None
+
+    def _publish_state(self):
+        """Mirror the current track / play state into the notification."""
+        if not self._notification:
+            return
+        title = 'Luister'
+        if 0 <= self.current_index < len(self.playlist):
+            title = Path(self.playlist[self.current_index]).stem
+        try:
+            self._notification.show(title, self.is_playing)
+        except Exception as e:
+            self.log(f'Notification error: {e}')
+
+    def _on_notification_action(self, action: str):
+        """Notification button pressed. Runs on a Java thread, even with the screen off."""
+        print(f'[luister] notification action: {action}', flush=True)
+        try:
+            with self._transport_lock:
+                if action == 'toggle':
+                    self._service_toggle()
+                elif action == 'next':
+                    self._service_play_index((self.current_index + 1) % len(self.playlist)
+                                             if self.playlist else -1)
+                elif action == 'prev':
+                    self._service_play_index((self.current_index - 1) % len(self.playlist)
+                                             if self.playlist else -1)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _on_track_complete(self):
+        """Player reached the end of the track (Java thread)."""
+        with self._transport_lock:
+            if not self.playlist:
+                return
+            idx = (self.current_index if self.is_looping
+                   else (self.current_index + 1) % len(self.playlist))
+            self._service_play_index(idx)
+
+    def _service_toggle(self):
+        if not self.sound:
+            if self.playlist:
+                self._service_play_index(max(self.current_index, 0))
+            return
+        if self.is_playing:
+            self.is_playing = False
+            self.sound.stop()
+        else:
+            self.sound.play()
+            self.is_playing = True
+        self._publish_state()
+        Clock.schedule_once(lambda dt: self._sync_ui_from_state(), 0)
+
+    def _service_play_index(self, index: int):
+        """Switch track without touching any Kivy widget (safe off the UI thread)."""
+        if not 0 <= index < len(self.playlist):
+            return
+        player = load_audio(self.playlist[index], logger=self.log,
+                            on_complete=self._on_track_complete)
+        if not player:
+            return
+        old, self.sound = self.sound, player
+        player.volume = self.config_manager.volume
+        player.play()
+        if old:
+            old.unload()
+        self.current_index = index
+        self.is_playing = True
+        self._publish_state()
+        Clock.schedule_once(lambda dt: self._sync_ui_from_state(), 0)
+
+    def _sync_ui_from_state(self):
+        """Bring widgets in line with playback state changed from the notification."""
+        if self.sound and 0 <= self.current_index < len(self.playlist):
+            path = self.playlist[self.current_index]
+            if path != self._ui_track_path:
+                self._ui_track_path = path
+                self.main_screen.update_track_info(Path(path).stem, self.sound.length or 0)
+                self.main_screen.visualizer.set_audio(path)
+                self.load_lyrics_for_current_track()
+                self.playlist_screen.refresh_playlist(self.playlist, self.current_index)
+                self.config_manager.last_index = self.current_index
+                self.config_manager.save()
+        self.main_screen.visualizer.set_playing(self.is_playing)
+        self.main_screen.controls.update_play_button(self.is_playing)
+
+    def on_pause(self):
+        # Returning True keeps the app (and its audio) alive when the screen locks.
+        return True
+
+    def on_resume(self):
+        self._sync_ui_from_state()
 
     def on_start(self):
         if platform == 'android':
             self._request_android_permissions()
+            self._setup_media_notification()
 
         self._update_event = Clock.schedule_interval(self._update_position, 0.1)
 
@@ -2189,6 +2425,9 @@ class LuisterApp(App):
             self._update_event.cancel()
         if self.sound:
             self.sound.stop()
+        if self._notification:
+            self._notification.cancel()
+            self._notification = None
 
         self.config_manager.last_playlist = self.playlist
         self.config_manager.last_index = self.current_index
@@ -2269,6 +2508,10 @@ class LuisterApp(App):
                 # Check if player actually stopped (Android MediaPlayer issue detection)
                 if hasattr(self.sound, 'is_playing'):
                     if not self.sound.is_playing():
+                        # A finished track is handled by the completion listener.
+                        if (platform == 'android'
+                                and self.sound.get_pos() >= (self.sound.length or 1) - 0.75):
+                            return
                         self.log('Player stopped unexpectedly - restarting')
                         self.sound.play()
                         return
@@ -2285,7 +2528,7 @@ class LuisterApp(App):
                 # Update synced lyrics display
                 self.update_lyrics_display(pos)
 
-                if pos >= length - 0.5:
+                if pos >= length - 0.5 and platform != 'android':
                     self.log(f'End of track at {pos:.1f}/{length:.1f}')
                     self.next_track()
             except Exception as e:
@@ -2300,8 +2543,10 @@ class LuisterApp(App):
             self.sound = None
 
         try:
-            self.sound = load_audio(path, logger=self.log)
+            self.sound = load_audio(path, logger=self.log,
+                                    on_complete=self._on_track_complete)
             if self.sound:
+                self._ui_track_path = path
                 title = Path(path).stem
                 duration = self.sound.length or 0
                 self.log(f'Loaded: {title} ({duration:.1f}s)')
@@ -2333,6 +2578,7 @@ class LuisterApp(App):
                 self.main_screen.visualizer.set_playing(True)
 
             self.main_screen.controls.update_play_button(self.is_playing)
+            self._publish_state()
 
     def stop_playback(self):
         """Stop playback and reset to beginning"""
@@ -2343,6 +2589,7 @@ class LuisterApp(App):
             self.main_screen.visualizer.set_playing(False)
             self.main_screen.controls.update_play_button(False)
             self.main_screen.update_position(0, self.sound.length or 1)
+            self._publish_state()
 
     def play_index(self, index: int):
         if 0 <= index < len(self.playlist):
@@ -2357,6 +2604,7 @@ class LuisterApp(App):
 
                 self.config_manager.last_index = self.current_index
                 self.config_manager.save()
+                self._publish_state()
 
     def next_track(self):
         if self.playlist:
@@ -2411,6 +2659,7 @@ class LuisterApp(App):
         self.main_screen.visualizer.set_playing(False)
         self.playlist_screen.refresh_playlist([], -1)
         self.main_screen.update_track_info('No track loaded', 0)
+        self._publish_state()
 
     def show_youtube_dialog(self):
         popup = YouTubeDownloadPopup()

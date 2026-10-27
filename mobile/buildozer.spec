@@ -15,8 +15,9 @@ requirements = python3,kivy==2.3.1,pyjnius,android,plyer,numpy,requests,urllib3,
 orientation = portrait
 fullscreen = 0
 
-# READ_MEDIA_AUDIO covers Android 13+, READ_EXTERNAL_STORAGE covers older versions.
-android.permissions = INTERNET,READ_MEDIA_AUDIO,READ_EXTERNAL_STORAGE,WAKE_LOCK
+# READ_MEDIA_AUDIO covers Android 13+, READ_EXTERNAL_STORAGE covers older versions;
+# POST_NOTIFICATIONS is needed for the playback notification on Android 13+.
+android.permissions = INTERNET,READ_MEDIA_AUDIO,READ_EXTERNAL_STORAGE,POST_NOTIFICATIONS,WAKE_LOCK
 android.api = 35
 android.minapi = 26
 android.archs = arm64-v8a
