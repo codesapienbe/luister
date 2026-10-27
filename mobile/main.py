@@ -1655,13 +1655,12 @@ class MainScreen(Screen):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[dp(28), dp(48), dp(28), dp(12)],
+            padding=[dp(28), dp(52), dp(28), dp(16)],
             spacing=dp(14)
         )
 
         # Visualizer sits in the optical centre with breathing room around it
-        layout.add_widget(Widget(size_hint=(1, 0.02)))
-        self.visualizer = VisualizerWidget(size_hint=(1, 0.74))
+        self.visualizer = VisualizerWidget(size_hint=(1, 1))
         layout.add_widget(self.visualizer)
 
         # Track title
@@ -1704,8 +1703,6 @@ class MainScreen(Screen):
         self.lyrics_next.bind(width=lambda *x: setattr(self.lyrics_next, 'text_size', (self.lyrics_next.width, None)))
         lyrics_container.add_widget(self.lyrics_next)
         layout.add_widget(lyrics_container)
-
-        layout.add_widget(Widget(size_hint=(1, 0.04)))
 
         # Progress: slider with the two timestamps tucked underneath
         self.progress_slider = NavigableSlider(
@@ -1777,7 +1774,7 @@ class MainScreen(Screen):
         layout.add_widget(bottom_layout)
         main_box.add_widget(layout)
 
-        # Debug footer (one-liner status bar)
+        # Debug status line: kept for logging but not shown (see log() for logcat output)
         self.debug_label = Label(
             text='Ready',
             size_hint=(1, None),
@@ -1790,7 +1787,6 @@ class MainScreen(Screen):
             shorten_from='left'
         )
         self.debug_label.bind(width=lambda *x: setattr(self.debug_label, 'text_size', (self.debug_label.width, None)))
-        main_box.add_widget(self.debug_label)
 
         self.add_widget(main_box)
 
