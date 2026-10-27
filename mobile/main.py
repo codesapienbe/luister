@@ -1229,7 +1229,7 @@ class PlayerControls(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'horizontal'
-        self.spacing = dp(8)
+        self.spacing = dp(20)
         self.padding = [dp(8), dp(8)]
 
         # Left spacer for centering
@@ -1239,7 +1239,7 @@ class PlayerControls(BoxLayout):
         self.shuffle_btn = IconButton(
             icon='shuffle',
             size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         self.shuffle_btn.bind(on_release=self.on_shuffle)
         self.add_widget(self.shuffle_btn)
@@ -1275,7 +1275,7 @@ class PlayerControls(BoxLayout):
         self.loop_btn = IconButton(
             icon='loop',
             size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         self.loop_btn.bind(on_release=self.on_loop)
         self.add_widget(self.loop_btn)
@@ -1467,16 +1467,17 @@ class MainScreen(Screen):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[dp(16), dp(24), dp(16), dp(16)],
-            spacing=dp(12)
+            padding=[dp(28), dp(60), dp(28), dp(12)],
+            spacing=dp(14)
         )
 
-        # Track title with glass panel
-        title_box = BoxLayout(size_hint=(1, 0.06))
+        # Track title
+        title_box = BoxLayout(size_hint=(1, None), height=dp(36))
         self.title_label = Label(
             text=self.track_title,
-            font_size=sp(18),
+            font_size=sp(22),
             color=Theme.TEXT_PRIMARY,
+            bold=True,
             halign='center',
             valign='middle',
             shorten=True,
@@ -1486,26 +1487,22 @@ class MainScreen(Screen):
         title_box.add_widget(self.title_label)
         layout.add_widget(title_box)
 
-        # Lyrics display area (above visualizer)
-        lyrics_container = BoxLayout(orientation='vertical', size_hint=(1, 0.12), spacing=dp(2))
-
-        # Current lyrics line (main, larger)
+        # Synced lyrics: only the current line is prominent, the next one whispers
+        lyrics_container = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(56), spacing=dp(2))
         self.lyrics_current = Label(
             text='',
-            font_size=sp(16),
+            font_size=sp(15),
             color=Theme.ACCENT,
             halign='center',
             valign='bottom',
-            bold=True,
             size_hint=(1, 0.6)
         )
         self.lyrics_current.bind(width=lambda *x: setattr(self.lyrics_current, 'text_size', (self.lyrics_current.width, None)))
         lyrics_container.add_widget(self.lyrics_current)
 
-        # Next lyrics line (dimmer, smaller)
         self.lyrics_next = Label(
             text='',
-            font_size=sp(13),
+            font_size=sp(12),
             color=Theme.TEXT_TERTIARY,
             halign='center',
             valign='top',
@@ -1513,99 +1510,68 @@ class MainScreen(Screen):
         )
         self.lyrics_next.bind(width=lambda *x: setattr(self.lyrics_next, 'text_size', (self.lyrics_next.width, None)))
         lyrics_container.add_widget(self.lyrics_next)
-
         layout.add_widget(lyrics_container)
 
-        # Visualizer
-        self.visualizer = VisualizerWidget(size_hint=(1, 0.28))
+        # Visualizer sits in the optical centre with breathing room around it
+        layout.add_widget(Widget(size_hint=(1, 0.05)))
+        self.visualizer = VisualizerWidget(size_hint=(1, 0.6))
         layout.add_widget(self.visualizer)
+        layout.add_widget(Widget(size_hint=(1, 0.35)))
 
-        # Time display
-        time_layout = BoxLayout(size_hint=(1, 0.05), spacing=dp(8), padding=[dp(8), 0])
-        self.time_current = Label(
-            text='0:00',
-            size_hint=(0.2, 1),
-            font_size=sp(14),
-            color=Theme.TEXT_SECONDARY,
-            halign='left'
-        )
-        self.time_current.bind(size=self.time_current.setter('text_size'))
-
-        self.time_total = Label(
-            text='0:00',
-            size_hint=(0.2, 1),
-            font_size=sp(14),
-            color=Theme.TEXT_SECONDARY,
-            halign='right'
-        )
-        self.time_total.bind(size=self.time_total.setter('text_size'))
-
-        time_layout.add_widget(self.time_current)
-        time_layout.add_widget(Widget(size_hint=(0.6, 1)))
-        time_layout.add_widget(self.time_total)
-        layout.add_widget(time_layout)
-
-        # Progress slider with navigation zones
+        # Progress: slider with the two timestamps tucked underneath
         self.progress_slider = NavigableSlider(
             value=0,
             min_value=0,
             max_value=100,
-            size_hint=(1, 0.07)
+            size_hint=(1, None),
+            height=dp(36)
         )
         layout.add_widget(self.progress_slider)
 
-        # Volume control
-        volume_layout = BoxLayout(size_hint=(1, 0.06), spacing=dp(12), padding=[dp(8), 0])
-
-        # Volume icon (using IconButton but non-interactive)
-        vol_icon = IconButton(
-            icon='volume',
-            size_hint=(None, None),
-            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
+        time_layout = BoxLayout(size_hint=(1, None), height=dp(18), padding=[dp(4), 0])
+        self.time_current = Label(
+            text='0:00',
+            font_size=sp(12),
+            color=Theme.TEXT_TERTIARY,
+            halign='left'
         )
-        vol_icon.disabled = True  # Just for display
-        volume_layout.add_widget(vol_icon)
-
-        self.volume_slider = StyledSlider(
-            value=70,
-            min_value=0,
-            max_value=100,
-            size_hint=(1, 1)
+        self.time_current.bind(size=self.time_current.setter('text_size'))
+        self.time_total = Label(
+            text='0:00',
+            font_size=sp(12),
+            color=Theme.TEXT_TERTIARY,
+            halign='right'
         )
+        self.time_total.bind(size=self.time_total.setter('text_size'))
+        time_layout.add_widget(self.time_current)
+        time_layout.add_widget(self.time_total)
+        layout.add_widget(time_layout)
+
+        # Volume follows the hardware keys; the slider only holds the app-level gain
+        self.volume_slider = StyledSlider(value=70, min_value=0, max_value=100)
         self.volume_slider.bind(value=self.on_volume)
-        volume_layout.add_widget(self.volume_slider)
-        layout.add_widget(volume_layout)
 
         # Player controls
         self.controls = PlayerControls(size_hint=(1, None), height=BUTTON_SIZE_LARGE + dp(16))
         layout.add_widget(self.controls)
 
-        # Bottom action buttons (centered with consistent sizing)
-        bottom_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE + dp(16), spacing=dp(24), padding=[dp(16), dp(8)])
-
-        # Left spacer for centering
+        # Secondary actions: library, download, settings
+        bottom_layout = BoxLayout(size_hint=(1, None), height=BUTTON_SIZE_SMALL + dp(16),
+                                  spacing=dp(36), padding=[dp(16), dp(8)])
         bottom_layout.add_widget(Widget(size_hint=(1, 1)))
 
         self.playlist_btn = IconButton(
             icon='list',
             size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         self.playlist_btn.bind(on_release=self.open_playlist)
         bottom_layout.add_widget(self.playlist_btn)
 
-        self.open_btn = IconButton(
-            icon='folder',
-            size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
-        )
-        self.open_btn.bind(on_release=self.open_folder)
-        bottom_layout.add_widget(self.open_btn)
-
         self.youtube_btn = IconButton(
             icon='youtube',
             size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         self.youtube_btn.bind(on_release=self.open_youtube)
         bottom_layout.add_widget(self.youtube_btn)
@@ -1613,14 +1579,12 @@ class MainScreen(Screen):
         self.settings_btn = IconButton(
             icon='settings',
             size_hint=(None, None),
-            size=(BUTTON_SIZE, BUTTON_SIZE)
+            size=(BUTTON_SIZE_SMALL, BUTTON_SIZE_SMALL)
         )
         self.settings_btn.bind(on_release=self.open_settings)
         bottom_layout.add_widget(self.settings_btn)
 
-        # Right spacer for centering
         bottom_layout.add_widget(Widget(size_hint=(1, 1)))
-
         layout.add_widget(bottom_layout)
         main_box.add_widget(layout)
 
@@ -1655,11 +1619,6 @@ class MainScreen(Screen):
         if app:
             app.root.transition = SlideTransition(direction='left')
             app.root.current = 'playlist'
-
-    def open_folder(self, instance):
-        app = App.get_running_app()
-        if app:
-            app.open_folder()
 
     def open_youtube(self, instance):
         app = App.get_running_app()

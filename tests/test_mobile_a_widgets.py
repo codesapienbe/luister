@@ -587,8 +587,6 @@ def test_main_screen(app, monkeypatch):
 
     s.playlist_btn.dispatch("on_release")
     assert app.root.current == "playlist"
-    s.open_btn.dispatch("on_release")
-    app.open_folder.assert_called_once()
     s.youtube_btn.dispatch("on_release")
     app.show_youtube_dialog.assert_called_once()
     s.settings_btn.dispatch("on_release")
@@ -616,5 +614,4 @@ def test_main_screen_no_app(no_app, monkeypatch):
     s = m.MainScreen()
     s.on_volume(None, 10)
     s.open_playlist(None)
-    s.open_folder(None)
     s.open_youtube(None)
