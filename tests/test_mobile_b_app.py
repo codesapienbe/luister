@@ -197,6 +197,7 @@ def test_show_youtube_dialog(app):
 
 class FakeYDL:
     files = []
+    hooked = []
     fail = None
 
     def __init__(self, opts):
@@ -216,6 +217,8 @@ class FakeYDL:
         hook({'status': 'downloading', 'downloaded_bytes': 1})
         hook({'status': 'other'})
         hook({'status': 'finished'})
+        for f in FakeYDL.hooked:
+            hook({'status': 'finished', 'filename': f})
         lg = FakeYDL.opts['logger']
         lg.debug('d')
         lg.info('i')
@@ -254,6 +257,18 @@ def test_download_success_already_playing_and_dupe(app, monkeypatch, tmp_path):
     pop = run_download(app, monkeypatch, tmp_path, ['a.m4a'], playing=True)
     assert app.playlist == [existing]
     assert pop.status_label.text == 'Downloaded 1 file(s)'
+
+
+def test_download_already_downloaded_file(app, monkeypatch, tmp_path):
+    f = app.config_manager.downloads_dir / 'old.mp4'
+    f.write_bytes(b'x')
+    FakeYDL.hooked = [str(f), str(tmp_path / 'missing.mp4')]
+    try:
+        pop = run_download(app, monkeypatch, tmp_path, [])
+    finally:
+        FakeYDL.hooked = []
+    assert pop.status_label.text == 'Downloaded 1 file(s)'
+    assert app.playlist == [str(f)]
 
 
 def test_download_no_files(app, monkeypatch, tmp_path):

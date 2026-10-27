@@ -2276,6 +2276,7 @@ class LuisterApp(App):
 
     def log(self, msg: str):
         """Update debug footer with a message (thread-safe)"""
+        print(f'[luister] {msg}', flush=True)
         def update(dt):
             if hasattr(self, 'main_screen') and hasattr(self.main_screen, 'debug_label'):
                 self.main_screen.debug_label.text = str(msg)[:100]
@@ -2489,7 +2490,7 @@ class LuisterApp(App):
 
         music_dirs.append(str(self.config_manager.downloads_dir))
 
-        audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus'}
+        audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus', '.mp4'}
         found_files: List[str] = []
 
         for music_dir in music_dirs:
@@ -2522,14 +2523,14 @@ class LuisterApp(App):
             filechooser.open_file(
                 on_selection=self._on_files_selected,
                 multiple=True,
-                filters=[('Audio Files', '*.mp3', '*.wav', '*.ogg', '*.m4a', '*.flac', '*.opus', '*.webm', '*.aac')]
+                filters=[('Audio Files', '*.mp3', '*.wav', '*.ogg', '*.m4a', '*.flac', '*.opus', '*.webm', '*.aac', '*.mp4')]
             )
         except Exception as e:
             self.main_screen.title_label.text = f'Error: {str(e)[:30]}'
 
     def _on_files_selected(self, selection):
         if selection:
-            audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus'}
+            audio_exts = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.opus', '.mp4'}
             valid_files = [f for f in selection if Path(f).suffix.lower() in audio_exts]
 
             if valid_files:
@@ -2748,7 +2749,11 @@ class LuisterApp(App):
                 output_dir.mkdir(parents=True, exist_ok=True)
                 app.log(f'Output: {output_dir}')
 
+                finished_files: list = []
+
                 def progress_hook(d):
+                    if d.get('status') == 'finished' and d.get('filename'):
+                        finished_files.append(Path(d['filename']))
                     if d.get('status') == 'downloading':
                         total = d.get('total_bytes') or d.get('total_bytes_estimate')
                         downloaded = d.get('downloaded_bytes', 0)
@@ -2772,7 +2777,7 @@ class LuisterApp(App):
                     def error(self, msg): app.log(f'[E] {msg}')
 
                 # Audio formats supported by Kivy (no FFmpeg needed)
-                audio_extensions = ('*.m4a', '*.mp3', '*.ogg', '*.opus', '*.webm', '*.wav', '*.aac')
+                audio_extensions = ('*.m4a', '*.mp3', '*.ogg', '*.opus', '*.webm', '*.wav', '*.aac', '*.mp4')
 
                 ydl_opts = {
                     # Prefer m4a (AAC) which Kivy can play, fallback to best audio
@@ -2811,6 +2816,8 @@ class LuisterApp(App):
                 for ext in audio_extensions:
                     after_files.update(output_dir.glob(ext))
                 new_files = list(after_files - before_files)
+                # Files that already existed are reported by the hook only
+                new_files += [f for f in finished_files if f.exists() and f not in new_files]
                 app.log(f'Found {len(new_files)} new file(s)')
 
                 if new_files:
