@@ -146,7 +146,7 @@ def test_playlist_no_running_app():
 def test_youtube_popup_flow(app, monkeypatch):
     pop = m.YouTubeDownloadPopup()
     click(pop.download_btn)
-    assert pop.status_label.text == 'Please enter a URL'
+    assert pop.status_label.text == 'Type a search or paste a URL'
 
     got = []
     monkeypatch.setattr(app, 'download_youtube', lambda u, p: got.append(u))
@@ -164,6 +164,31 @@ def test_youtube_popup_flow(app, monkeypatch):
 
     m.App._running_app = None
     click(pop.download_btn)  # no app: nothing happens
+
+
+def test_youtube_search_flow(app, monkeypatch):
+    class SearchYDL(FakeYDL):
+        def extract_info(self, q, download=False):
+            if 'boom' in q:
+                raise RuntimeError('x')
+            return {'entries': [None, {'title': ''}, {'id': 'a', 'title': 'A', 'duration': 65},
+                                {'id': 'b', 'url': 'https://u/b'}]}
+
+    monkeypatch.setitem(sys.modules, 'yt_dlp', types.SimpleNamespace(YoutubeDL=SearchYDL))
+    pop = m.YouTubeDownloadPopup()
+    got = []
+    monkeypatch.setattr(app, 'download_youtube', lambda u, p: got.append(u))
+    pop.url_input.text = 'lofi'
+    click(pop.download_btn)
+    assert len(pop.results_box.children) == 2 and not pop.download_btn.disabled
+    assert pop.status_label.text == 'Tap a result to download'
+    pop.results_box.children[-1].dispatch('on_release')
+    assert got == ['https://www.youtube.com/watch?v=a']
+    assert pop.url_input.text == got[0] and not pop.results_box.children
+
+    pop.url_input.text = 'boom'
+    click(pop.download_btn)
+    assert pop.status_label.text == 'No results'
 
 
 def test_show_youtube_dialog(app):

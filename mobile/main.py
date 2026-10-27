@@ -1831,7 +1831,7 @@ class YouTubeDownloadPopup(Popup):
         super().__init__(**kwargs)
         self.title = ''
         self.separator_height = 0
-        self.size_hint = (0.9, 0.45)
+        self.size_hint = (0.92, 0.75)
         self.background = ''
         self.background_color = (0, 0, 0, 0)
 
@@ -1852,7 +1852,7 @@ class YouTubeDownloadPopup(Popup):
 
         # Title
         layout.add_widget(Label(
-            text='Download from YouTube',
+            text='YouTube',
             font_size=sp(18),
             color=Theme.TEXT_PRIMARY,
             bold=True,
@@ -1861,9 +1861,10 @@ class YouTubeDownloadPopup(Popup):
 
         # URL input
         self.url_input = TextInput(
-            hint_text='Paste YouTube URL here...',
+            hint_text='Search or paste URL...',
             multiline=False,
-            size_hint=(1, 0.2),
+            size_hint=(1, None),
+            height=dp(48),
             font_size=sp(15),
             background_color=Theme.BG_TERTIARY,
             foreground_color=Theme.TEXT_PRIMARY,
@@ -1871,16 +1872,24 @@ class YouTubeDownloadPopup(Popup):
             cursor_color=Theme.ACCENT,
             padding=[dp(16), dp(12)]
         )
+        self.url_input.bind(on_text_validate=self.start_download)
         layout.add_widget(self.url_input)
 
+        # Search results
+        self.results_scroll = ScrollView(size_hint=(1, 1))
+        self.results_box = GridLayout(cols=1, size_hint_y=None, spacing=dp(6))
+        self.results_box.bind(minimum_height=self.results_box.setter('height'))
+        self.results_scroll.add_widget(self.results_box)
+        layout.add_widget(self.results_scroll)
+
         # Progress section
-        progress_box = BoxLayout(orientation='vertical', size_hint=(1, 0.25), spacing=dp(8))
+        progress_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(56), spacing=dp(4))
 
         self.progress_bar = ProgressBar(max=100, value=0, size_hint=(1, 0.5))
         progress_box.add_widget(self.progress_bar)
 
         self.status_label = Label(
-            text='Enter a YouTube URL',
+            text='Search or paste a URL',
             size_hint=(1, 0.5),
             font_size=sp(13),
             color=Theme.TEXT_SECONDARY
@@ -1908,14 +1917,50 @@ class YouTubeDownloadPopup(Popup):
     def start_download(self, instance):
         url = self.url_input.text.strip()
         if not url:
-            self.status_label.text = 'Please enter a URL'
+            self.status_label.text = 'Type a search or paste a URL'
             return
 
         app = App.get_running_app()
-        if app:
-            self.download_btn.disabled = True
+        if not app:
+            return
+        self.download_btn.disabled = True
+        if url.startswith(('http://', 'https://')):
+            self.results_box.clear_widgets()
             self.status_label.text = 'Starting download...'
             app.download_youtube(url, self)
+        else:
+            self.status_label.text = 'Searching...'
+            app.search_youtube(url, self)
+
+    def show_results(self, results):
+        self.download_btn.disabled = False
+        self.results_box.clear_widgets()
+        if not results:
+            self.status_label.text = 'No results'
+            return
+        self.status_label.text = 'Tap a result to download'
+        for title, url, duration in results:
+            btn = Button(
+                text=f'{title}\n[size=12sp]{duration}[/size]' if duration else title,
+                markup=True,
+                halign='left',
+                valign='middle',
+                size_hint_y=None,
+                height=dp(64),
+                background_normal='',
+                background_color=Theme.BG_TERTIARY,
+                color=Theme.TEXT_PRIMARY,
+                font_size=sp(14),
+                padding=(dp(12), dp(6)),
+            )
+            btn.bind(size=lambda b, sz: setattr(b, 'text_size', (sz[0] - dp(24), sz[1])))
+            btn.bind(on_release=lambda b, u=url: self.pick_result(u))
+            self.results_box.add_widget(btn)
+
+    def pick_result(self, url: str):
+        self.url_input.text = url
+        self.results_box.clear_widgets()
+        self.start_download(None)
 
     def update_progress(self, progress: int, status: str):
         self.progress_bar.value = progress
@@ -2658,6 +2703,30 @@ class LuisterApp(App):
     def show_youtube_dialog(self):
         popup = YouTubeDownloadPopup()
         popup.open()
+
+    def search_youtube(self, query: str, popup: YouTubeDownloadPopup):
+        def search_task():
+            results = []
+            try:
+                import yt_dlp
+                opts = {'quiet': True, 'no_warnings': True, 'extract_flat': True, 'skip_download': True}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(f'ytsearch10:{query}', download=False)
+                for e in (info or {}).get('entries') or []:
+                    if not e or not e.get('id'):
+                        continue
+                    secs = int(e.get('duration') or 0)
+                    dur = f'{secs // 60}:{secs % 60:02d}' if secs else ''
+                    results.append((
+                        e.get('title') or e['id'],
+                        e.get('url') or f"https://www.youtube.com/watch?v={e['id']}",
+                        dur,
+                    ))
+            except Exception as ex:
+                self.log(f'Search error: {ex}')
+            Clock.schedule_once(lambda dt: popup.show_results(results), 0)
+
+        threading.Thread(target=search_task, daemon=True).start()
 
     def download_youtube(self, url: str, popup: YouTubeDownloadPopup):
         app = self
