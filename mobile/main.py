@@ -846,11 +846,16 @@ class IconButton(ButtonBehavior, Widget):
             Line(points=[cx + s * 0.4, cy - s * 0.4, cx + s * 0.8, cy - s * 0.8], width=dp(2.5))
 
         elif self.icon == 'clear':
-            # Trash / X icon
-            s = size * 0.5
-            # X shape
-            Line(points=[cx - s, cy - s, cx + s, cy + s], width=dp(2.5))
-            Line(points=[cx - s, cy + s, cx + s, cy - s], width=dp(2.5))
+            # Trash can (an X would read as "close", but this empties the list)
+            s = size * 0.36
+            w = dp(2)
+            Line(points=[cx - s, cy + s * 0.6, cx + s, cy + s * 0.6], width=w)  # lid
+            Line(points=[cx - s * 0.35, cy + s * 0.6, cx - s * 0.35, cy + s * 0.9,
+                         cx + s * 0.35, cy + s * 0.9, cx + s * 0.35, cy + s * 0.6], width=w)  # handle
+            Line(points=[cx - s * 0.75, cy + s * 0.6, cx - s * 0.6, cy - s,
+                         cx + s * 0.6, cy - s, cx + s * 0.75, cy + s * 0.6], width=w)  # body
+            Line(points=[cx - s * 0.2, cy + s * 0.2, cx - s * 0.2, cy - s * 0.5], width=w)
+            Line(points=[cx + s * 0.2, cy + s * 0.2, cx + s * 0.2, cy - s * 0.5], width=w)
 
         elif self.icon == 'volume':
             # Speaker icon
@@ -1467,9 +1472,14 @@ class MainScreen(Screen):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[dp(28), dp(60), dp(28), dp(12)],
+            padding=[dp(28), dp(48), dp(28), dp(12)],
             spacing=dp(14)
         )
+
+        # Visualizer sits in the optical centre with breathing room around it
+        layout.add_widget(Widget(size_hint=(1, 0.08)))
+        self.visualizer = VisualizerWidget(size_hint=(1, 0.62))
+        layout.add_widget(self.visualizer)
 
         # Track title
         title_box = BoxLayout(size_hint=(1, None), height=dp(36))
@@ -1512,11 +1522,7 @@ class MainScreen(Screen):
         lyrics_container.add_widget(self.lyrics_next)
         layout.add_widget(lyrics_container)
 
-        # Visualizer sits in the optical centre with breathing room around it
-        layout.add_widget(Widget(size_hint=(1, 0.05)))
-        self.visualizer = VisualizerWidget(size_hint=(1, 0.6))
-        layout.add_widget(self.visualizer)
-        layout.add_widget(Widget(size_hint=(1, 0.35)))
+        layout.add_widget(Widget(size_hint=(1, 0.1)))
 
         # Progress: slider with the two timestamps tucked underneath
         self.progress_slider = NavigableSlider(
