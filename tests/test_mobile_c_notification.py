@@ -205,3 +205,78 @@ def test_update_position_android_end_of_track(app, monkeypatch):  # noqa: F811
     s.get_pos = lambda: 2
     app._update_position(0)  # mid-track stop: restarted
     assert 'play' in s.calls
+
+
+# ---------------------------------------------------------------- live spectrum
+def _fft_bytes(n=512, loud_bin=10):
+    data = [0] * n
+    data[2 * loud_bin], data[2 * loud_bin + 1] = 100, -100  # negative byte: signed wrap
+    return data
+
+
+def test_fft_capture_lifecycle_and_bands(fake_android):
+    cap = m.AndroidFftCapture(7)
+    viz = fake_android['android.media.audiofx.Visualizer'].return_value
+    viz.setEnabled.assert_called_with(True)
+    listener = viz.setDataCaptureListener.call_args[0][0]
+    listener.onWaveFormDataCapture(None, [], 0)
+    assert cap.bands is None
+
+    listener.onFftDataCapture(None, [0, 0], 0)  # too short: ignored
+    assert cap.bands is None
+
+    listener.onFftDataCapture(None, _fft_bytes(), 0)
+    listener.onFftDataCapture(None, [b - 256 if b > 127 else b for b in _fft_bytes()], 0)
+    assert len(cap.bands) == 32 and max(cap.bands) == 1.0 and min(cap.bands) >= 0.0
+    assert cap.bands.index(1.0) > 5
+
+    cap.release()
+    viz.release.assert_called()
+    viz.setEnabled.side_effect = RuntimeError
+    cap.release()  # errors on teardown are swallowed
+
+
+def test_fft_capture_setup_failure_releases(fake_android):
+    viz = sys.modules['jnius'].autoclass('android.media.audiofx.Visualizer').return_value
+    viz.setCaptureSize.side_effect = RuntimeError
+    with pytest.raises(RuntimeError):
+        m.AndroidFftCapture(1)
+    viz.release.assert_called()
+
+
+def test_player_fft_enable_and_release(fake_android):
+    p = m.AndroidMediaPlayer('/a.mp3')
+    assert p.fft_bands() is None and p.enable_fft() and p.enable_fft()
+    p._fft.bands = [0.5] * 32
+    assert p.fft_bands() == [0.5] * 32
+    p.unload()
+    assert p.fft_bands() is None
+
+    fake_android['android.media.audiofx.Visualizer'].side_effect = RuntimeError('no permission')
+    q = m.AndroidMediaPlayer('/b.mp3')
+    assert q.fft_bands() is None and not q.enable_fft()
+    q.unload()
+
+
+def test_visualizer_uses_live_source():
+    v = m.VisualizerWidget()
+    v.set_playing(True)
+    v.set_fft_source(lambda: [1.0] * 32)
+    v._update_animation(0)
+    assert v.magnitudes[0] == pytest.approx(0.7)
+    v.set_fft_source(lambda: [0.0] * 32)
+    v._update_animation(0)
+    assert v.magnitudes[0] == pytest.approx(0.7 * 0.82)
+    v.set_fft_source(lambda: None)  # source without data falls back to the demo
+    v._update_animation(0)
+
+
+def test_attach_visualizer_and_permission_callback(app, fake_android, monkeypatch):
+    app.sound = FakeSound()
+    app._attach_visualizer()
+    assert app.main_screen.visualizer._fft_source is None
+
+    sound = types.SimpleNamespace(enable_fft=lambda: True, fft_bands=lambda: [0] * 32)
+    app.sound = sound
+    app._attach_visualizer()
+    assert app.main_screen.visualizer._fft_source is sound.fft_bands

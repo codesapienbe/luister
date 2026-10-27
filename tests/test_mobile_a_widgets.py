@@ -615,3 +615,38 @@ def test_main_screen_no_app(no_app, monkeypatch):
     s.on_volume(None, 10)
     s.open_playlist(None)
     s.open_youtube(None)
+
+
+def test_visualizer_styles_and_long_press():
+    v = m.VisualizerWidget(pos=(0, 0), size=(300, 200))
+    v.magnitudes = [0.5] * v.bars
+    for style in range(len(v.STYLES)):
+        v.style = style
+        v._draw_bars()
+
+    class Touch:
+        def __init__(self, pos):
+            self.pos = pos
+            self.grab_current = None
+
+        def grab(self, w):
+            self.grab_current = w
+
+        def ungrab(self, w):
+            self.grab_current = None
+
+    outside = Touch((999, 999))
+    assert not v.on_touch_down(outside)
+    assert not v.on_touch_up(outside)
+
+    t = Touch((10, 10))
+    assert v.on_touch_down(t) and v._hold_event is not None
+    assert v.on_touch_up(t) and v._hold_event is None  # released early: no change
+    assert v.style == 2
+
+    start = v.style
+    t = Touch((10, 10))
+    v.on_touch_down(t)
+    v._hold_event.cancel()
+    v._next_style()
+    assert v.style == (start + 1) % 3

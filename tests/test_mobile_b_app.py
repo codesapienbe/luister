@@ -798,7 +798,7 @@ def test_android_permissions(app, monkeypatch, tmp_path, api, expected):
     scans = []
     monkeypatch.setattr(app, 'scan_music_directories', lambda: scans.append(1))
     app.on_start()
-    assert req['p'] == [expected] + (['android.permission.POST_NOTIFICATIONS'] if api >= 33 else [])
+    assert req['p'] == [expected, 'android.permission.RECORD_AUDIO'] + (['android.permission.POST_NOTIFICATIONS'] if api >= 33 else [])
     scans.clear()
     req['cb']([expected], [True])
     assert scans == [1]
@@ -807,6 +807,11 @@ def test_android_permissions(app, monkeypatch, tmp_path, api, expected):
     app.playlist = ['/x.mp3']
     req['cb']([expected], [True])
     assert scans == []
+
+    # Granting RECORD_AUDIO mid-playback switches the visualizer to the live spectrum.
+    app.sound = types.SimpleNamespace(enable_fft=lambda: True, fft_bands=lambda: [0] * 32)
+    req['cb']([expected], [False])
+    assert app.main_screen.visualizer._fft_source is app.sound.fft_bands
 
 
 def test_main_runs_app(monkeypatch):

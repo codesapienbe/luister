@@ -141,6 +141,22 @@ class AndroidMediaPlayer:
         self._player.prepare()
         self._length = self._player.getDuration() / 1000.0  # Convert ms to seconds
         self._volume = 1.0
+        self._fft = None
+        self.enable_fft()
+
+    def enable_fft(self) -> bool:
+        """Start capturing the real output spectrum (needs RECORD_AUDIO)."""
+        if self._fft is not None:
+            return True
+        try:
+            self._fft = AndroidFftCapture(self._player.getAudioSessionId())
+        except Exception:
+            self._fft = None
+        return self._fft is not None
+
+    def fft_bands(self):
+        """Latest spectrum as VIZ_BARS values in 0..1, or None when unavailable."""
+        return self._fft.bands if self._fft is not None else None
 
     @property
     def length(self) -> float:
@@ -181,9 +197,80 @@ class AndroidMediaPlayer:
             return False
 
     def unload(self):
+        if self._fft is not None:
+            self._fft.release()
+            self._fft = None
         try:
             self._player.stop()
             self._player.release()
+        except Exception:
+            pass
+
+
+class AndroidFftCapture:
+    """Real-time spectrum of the MediaPlayer output via android.media.audiofx.Visualizer."""
+
+    def __init__(self, session_id: int, bars: int = 32):
+        from jnius import autoclass, PythonJavaClass, java_method
+
+        self.bars = bars
+        self.bands: Optional[List[float]] = None
+        self._peak = 0.2
+        self._edges = None
+
+        capture = self
+
+        class FftListener(PythonJavaClass):
+            __javainterfaces__ = ['android/media/audiofx/Visualizer$OnDataCaptureListener']
+            __javacontext__ = 'app'
+
+            @java_method('(Landroid/media/audiofx/Visualizer;[BI)V')
+            def onWaveFormDataCapture(self, visualizer, waveform, rate):
+                pass
+
+            @java_method('(Landroid/media/audiofx/Visualizer;[BI)V')
+            def onFftDataCapture(self, visualizer, fft, rate):
+                capture._process(fft)
+
+        Visualizer = autoclass('android.media.audiofx.Visualizer')
+        self._visualizer = Visualizer(session_id)
+        try:
+            self._visualizer.setEnabled(False)
+            self._visualizer.setCaptureSize(Visualizer.getCaptureSizeRange()[1])
+            self._listener = FftListener()
+            self._visualizer.setDataCaptureListener(
+                self._listener, Visualizer.getMaxCaptureRate(), False, True)
+            self._visualizer.setEnabled(True)
+        except Exception:
+            self._visualizer.release()
+            raise
+
+    def _process(self, fft):
+        """Fold the raw FFT bytes into log-spaced, gain-normalised bars."""
+        raw = np.array(list(fft), dtype=np.int16)
+        raw = (raw + 128) % 256 - 128  # signed bytes
+        mags = np.hypot(raw[2::2], raw[3::2][:len(raw[2::2])]).astype(np.float32)
+        n = len(mags)
+        if n < 2:
+            return
+        if self._edges is None or self._edges[-1] > n:
+            self._edges = np.geomspace(1, min(n, 220), self.bars + 1)
+        levels = np.empty(self.bars, dtype=np.float32)
+        for i in range(self.bars):
+            lo = int(self._edges[i])
+            hi = max(lo + 1, int(self._edges[i + 1]))
+            levels[i] = mags[lo:hi].max()
+        levels = np.log1p(levels)
+        # Highs carry less energy; tilt so the whole spectrum moves visibly.
+        levels *= np.linspace(1.0, 1.7, self.bars)
+        self._peak = max(self._peak * 0.995, float(levels.max()), 0.5)
+        # Squaring adds contrast so peaks stand out from the noise floor.
+        self.bands = (np.clip(levels / self._peak, 0.0, 1.0) ** 2).tolist()
+
+    def release(self):
+        try:
+            self._visualizer.setEnabled(False)
+            self._visualizer.release()
         except Exception:
             pass
 
@@ -1110,6 +1197,9 @@ class VisualizerWidget(Widget):
         self._current_frame: int = 0
         self._is_playing: bool = False
         self._has_audio: bool = False
+        self._fft_source = None
+        self.style = 0
+        self._hold_event = None
 
         self.bind(size=self._draw_bars, pos=self._draw_bars)
         Clock.schedule_interval(self._update_animation, 1/60)
@@ -1142,10 +1232,24 @@ class VisualizerWidget(Widget):
         frame = int((position_ms / 1000.0) * self._sample_rate)
         self._current_frame = min(frame, len(self._audio_data) - 1)
 
+    def set_fft_source(self, source):
+        """Use live spectrum data (callable returning bar levels or None)."""
+        self._fft_source = source
+
     def set_playing(self, playing: bool):
         self._is_playing = playing
 
     def _update_animation(self, dt):
+        live = self._fft_source() if self._fft_source and self._is_playing else None
+        if live is not None:
+            for i in range(self.bars):
+                self.target_magnitudes[i] = live[i]
+            # Fast attack, slower release so beats punch through.
+            for i in range(self.bars):
+                diff = self.target_magnitudes[i] - self.magnitudes[i]
+                self.magnitudes[i] += diff * (0.7 if diff > 0 else 0.18)
+            self._draw_bars()
+            return
         if self._has_audio and self._is_playing and self._audio_data is not None:
             self._calculate_fft()
         elif not self._is_playing:
@@ -1190,35 +1294,92 @@ class VisualizerWidget(Widget):
             normalized = min(1.0, band_mag / 800.0)
             self.target_magnitudes[i] = normalized
 
+    # Style switching: hold a finger on the visualizer for 3 seconds.
+    STYLES = ('bars', 'mirror', 'radial')
+    HOLD_SECONDS = 3.0
+
+    def on_touch_down(self, touch):
+        if not self.collide_point(*touch.pos):
+            return super().on_touch_down(touch)
+        touch.grab(self)
+        self._cancel_hold()
+        self._hold_event = Clock.schedule_once(self._next_style, self.HOLD_SECONDS)
+        return True
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            self._cancel_hold()
+            return True
+        return super().on_touch_up(touch)
+
+    def _cancel_hold(self):
+        if self._hold_event is not None:
+            self._hold_event.cancel()
+            self._hold_event = None
+
+    def _next_style(self, dt=None):
+        self._hold_event = None
+        self.style = (self.style + 1) % len(self.STYLES)
+        self._draw_bars()
+
+    @staticmethod
+    def _bar_color(mag):
+        Color(
+            Theme.VIZ_START[0] * (1 - mag) + Theme.VIZ_END[0] * mag,
+            Theme.VIZ_START[1] * (1 - mag) + Theme.VIZ_END[1] * mag,
+            Theme.VIZ_START[2] * (1 - mag) + Theme.VIZ_END[2] * mag,
+            0.9,
+        )
+
     def _draw_bars(self, *args):
         self.canvas.clear()
         with self.canvas:
-            # Background
             Color(*Theme.BG_SECONDARY)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(12)])
+            getattr(self, f'_style_{self.STYLES[self.style]}')()
 
-            # Draw bars
-            bar_width = (self.width - dp(24)) / self.bars
-            padding = dp(12)
+    def _style_bars(self):
+        bar_width = (self.width - dp(24)) / self.bars
+        padding = dp(12)
+        for i, mag in enumerate(self.magnitudes):
+            self._bar_color(mag)
+            bar_height = max(dp(4), mag * (self.height - dp(24)) * 0.95)
+            RoundedRectangle(
+                pos=(self.x + padding + i * bar_width + dp(1), self.y + padding),
+                size=(bar_width - dp(2), bar_height),
+                radius=[dp(2), dp(2), 0, 0],
+            )
 
-            for i, mag in enumerate(self.magnitudes):
-                # Gradient color based on magnitude
-                t = mag  # 0 to 1
-                r = Theme.VIZ_START[0] * (1-t) + Theme.VIZ_END[0] * t
-                g = Theme.VIZ_START[1] * (1-t) + Theme.VIZ_END[1] * t
-                b = Theme.VIZ_START[2] * (1-t) + Theme.VIZ_END[2] * t
-                Color(r, g, b, 0.9)
+    def _style_mirror(self):
+        """Bars growing up and down from a centre line."""
+        bar_width = (self.width - dp(24)) / self.bars
+        mid = self.y + self.height / 2
+        half_max = (self.height - dp(24)) / 2 * 0.95
+        for i, mag in enumerate(self.magnitudes):
+            self._bar_color(mag)
+            half = max(dp(2), mag * half_max)
+            RoundedRectangle(
+                pos=(self.x + dp(12) + i * bar_width + dp(1), mid - half),
+                size=(bar_width - dp(2), half * 2),
+                radius=[dp(3)],
+            )
 
-                bar_height = max(dp(4), mag * (self.height - dp(24)) * 0.95)
-                x = self.x + padding + i * bar_width + dp(1)
-                y = self.y + padding
-                w = bar_width - dp(2)
-
-                RoundedRectangle(
-                    pos=(x, y),
-                    size=(w, bar_height),
-                    radius=[dp(2), dp(2), 0, 0]
-                )
+    def _style_radial(self):
+        """Spokes radiating from a centre ring."""
+        cx, cy = self.center_x, self.center_y
+        reach = min(self.width, self.height) / 2 - dp(12)
+        inner = reach * 0.3
+        for i, mag in enumerate(self.magnitudes):
+            angle = 2 * math.pi * i / self.bars - math.pi / 2
+            length = dp(3) + mag * (reach - inner)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            self._bar_color(mag)
+            Line(
+                points=[cx + cos_a * inner, cy + sin_a * inner,
+                        cx + cos_a * (inner + length), cy + sin_a * (inner + length)],
+                width=dp(2.5), cap='round',
+            )
 
 
 # ============================================================================
@@ -2325,11 +2486,14 @@ class LuisterApp(App):
                 else Permission.READ_EXTERNAL_STORAGE)
 
         # Android 13+ also needs a runtime grant to show the playback notification.
-        wanted = [perm]
+        wanted = [perm, 'android.permission.RECORD_AUDIO']  # RECORD_AUDIO: spectrum visualizer
         if api_version >= 33:
             wanted.append('android.permission.POST_NOTIFICATIONS')
 
         def on_result(permissions, grants):
+            sound = self.sound
+            if sound is not None and hasattr(sound, 'enable_fft') and sound.enable_fft():
+                Clock.schedule_once(lambda dt: self._attach_visualizer(), 0)
             # Only the audio grant matters for scanning; notifications are optional.
             if grants[0] and not self.playlist:
                 Clock.schedule_once(lambda dt: self.scan_music_directories(), 0)
@@ -2413,6 +2577,11 @@ class LuisterApp(App):
         self._publish_state()
         Clock.schedule_once(lambda dt: self._sync_ui_from_state(), 0)
 
+    def _attach_visualizer(self):
+        """Drive the visualizer from the player's live spectrum when it has one."""
+        source = getattr(self.sound, 'fft_bands', None)
+        self.main_screen.visualizer.set_fft_source(source)
+
     def _sync_ui_from_state(self):
         """Bring widgets in line with playback state changed from the notification."""
         if self.sound and 0 <= self.current_index < len(self.playlist):
@@ -2421,6 +2590,7 @@ class LuisterApp(App):
                 self._ui_track_path = path
                 self.main_screen.update_track_info(Path(path).stem, self.sound.length or 0)
                 self.main_screen.visualizer.set_audio(path)
+                self._attach_visualizer()
                 self.load_lyrics_for_current_track()
                 self.playlist_screen.refresh_playlist(self.playlist, self.current_index)
                 self.config_manager.last_index = self.current_index
@@ -2593,6 +2763,7 @@ class LuisterApp(App):
                 self.main_screen.update_track_info(title, duration)
                 self.sound.volume = self.config_manager.volume
                 self.main_screen.visualizer.set_audio(path)
+                self._attach_visualizer()
                 # Load synced lyrics if available
                 self.load_lyrics_for_current_track()
                 return True
