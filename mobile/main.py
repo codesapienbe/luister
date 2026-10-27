@@ -16,6 +16,7 @@ from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.image import Image
 from kivy.uix.slider import Slider
 from kivy.uix.popup import Popup
 from kivy.uix.textinput import TextInput
@@ -378,108 +379,139 @@ BUTTON_SIZE_SMALL = dp(44)  # Compact buttons (volume icon, etc.)
 # ============================================================================
 # ANIMATED SPLASH SCREEN
 # ============================================================================
+class PulseRings(Widget):
+    """Concentric ripples radiating from the centre of the logo."""
+
+    phase = NumericProperty(0)
+    RINGS = 3
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw, phase=self._redraw)
+
+    def _redraw(self, *args):
+        self.canvas.clear()
+        cx, cy = self.center
+        inner, outer = self.width * 0.30, self.width * 0.5
+        with self.canvas:
+            for k in range(self.RINGS):
+                p = (self.phase + k / self.RINGS) % 1.0
+                Color(*Theme.ACCENT[:3], (1 - p) * 0.35)
+                Line(circle=(cx, cy, inner + p * (outer - inner)), width=dp(1.5))
+
+
+class EqualizerLoader(Widget):
+    """Loading indicator: a row of bars that dances like the logo's waveform."""
+
+    phase = NumericProperty(0)
+    BARS = 9
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw, phase=self._redraw)
+
+    def _redraw(self, *args):
+        self.canvas.clear()
+        gap = self.width / (self.BARS * 2 - 1)
+        with self.canvas:
+            for i in range(self.BARS):
+                wave = 0.5 + 0.5 * math.sin(2 * math.pi * (self.phase - i / self.BARS))
+                h = self.height * (0.25 + 0.75 * wave)
+                Color(*Theme.ACCENT[:3], 0.55 + 0.45 * wave)
+                RoundedRectangle(
+                    pos=(self.x + i * 2 * gap, self.center_y - h / 2),
+                    size=(gap, h), radius=[gap / 2])
+
+
 class SplashScreen(Screen):
-    """Animated splash screen with logo only"""
+    """Animated splash: the real Luister logo, ripples and an equalizer loader"""
+
+    STATUS_STEPS = ('Tuning in', 'Scanning your music', 'Almost there')
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        # Main layout
         layout = FloatLayout()
-
-        # Background
         with layout.canvas.before:
             Color(*Theme.BG_PRIMARY)
             self._bg = Rectangle(pos=layout.pos, size=layout.size)
         layout.bind(pos=self._update_bg, size=self._update_bg)
 
-        # Logo container (centered)
-        self.logo_widget = Widget(
-            size_hint=(None, None),
-            size=(dp(120), dp(120)),
-            pos_hint={'center_x': 0.5, 'center_y': 0.55},
-            opacity=0
-        )
+        self.rings = PulseRings(
+            size_hint=(None, None), size=(dp(300), dp(300)),
+            pos_hint={'center_x': 0.5, 'center_y': 0.56})
+        layout.add_widget(self.rings)
 
-        # Draw logo (stylized 'L' in a circle)
-        with self.logo_widget.canvas:
-            # Outer glow
-            Color(*Theme.ACCENT[:3], 0.15)
-            Ellipse(pos=(-dp(10), -dp(10)), size=(dp(140), dp(140)))
-
-            # Main circle with gradient effect
-            Color(*Theme.ACCENT)
-            Ellipse(pos=(0, 0), size=(dp(120), dp(120)))
-
-            # Inner highlight
-            Color(1, 1, 1, 0.2)
-            Ellipse(pos=(dp(10), dp(40)), size=(dp(80), dp(60)))
-
-            # Letter 'L' stylized
-            Color(1, 1, 1, 0.95)
-            # Vertical bar
-            RoundedRectangle(
-                pos=(dp(38), dp(25)),
-                size=(dp(14), dp(70)),
-                radius=[dp(4)]
-            )
-            # Horizontal bar
-            RoundedRectangle(
-                pos=(dp(38), dp(25)),
-                size=(dp(50), dp(14)),
-                radius=[dp(4)]
-            )
-
+        self.logo_widget = Image(
+            source=str(Path(__file__).resolve().parent / 'assets' / 'icon.png'),
+            size_hint=(None, None), size=(dp(132), dp(132)),
+            pos_hint={'center_x': 0.5, 'center_y': 0.56}, opacity=0)
         layout.add_widget(self.logo_widget)
 
-        # App name
         self.app_name = Label(
-            text='Luister',
-            font_size=sp(36),
-            color=Theme.TEXT_PRIMARY,
-            bold=True,
-            pos_hint={'center_x': 0.5, 'center_y': 0.38},
-            opacity=0
-        )
+            text='L U I S T E R', font_size=sp(26), color=Theme.TEXT_PRIMARY,
+            bold=True, pos_hint={'center_x': 0.5, 'center_y': 0.36}, opacity=0)
         layout.add_widget(self.app_name)
 
+        self.loader = EqualizerLoader(
+            size_hint=(None, None), size=(dp(96), dp(28)),
+            pos_hint={'center_x': 0.5, 'center_y': 0.29}, opacity=0)
+        layout.add_widget(self.loader)
+
+        self.status = Label(
+            text=self.STATUS_STEPS[0], font_size=sp(13), color=Theme.TEXT_SECONDARY,
+            pos_hint={'center_x': 0.5, 'center_y': 0.24}, opacity=0)
+        layout.add_widget(self.status)
+
         self.add_widget(layout)
+        self._loops = []
 
     def _update_bg(self, *args):
         self._bg.pos = self.pos
         self._bg.size = self.size
 
+    def _loop(self, target, duration, **props):
+        anim = Animation(duration=duration, **props)
+        anim.repeat = True
+        anim.start(target)
+        self._loops.append((anim, target))
+
     def on_enter(self):
         """Start animations when screen is shown"""
-        # Reset state
         self.logo_widget.opacity = 0
         self.app_name.opacity = 0
+        self.loader.opacity = 0
+        self.status.opacity = 0
+        self.rings.opacity = 0
 
-        # Logo animation: fade in with pulse
-        logo_anim = Animation(opacity=1, duration=0.5, t='out_cubic')
-        logo_anim.start(self.logo_widget)
-
-        # Gentle pulse animation for logo
-        def pulse_logo(dt):
-            if self.logo_widget.opacity > 0:
-                pulse = Animation(opacity=0.9, duration=0.6) + Animation(opacity=1, duration=0.6)
-                pulse.repeat = True
-                pulse.start(self.logo_widget)
-        Clock.schedule_once(pulse_logo, 0.6)
-
-        # App name fade in (delayed)
+        Animation(opacity=1, duration=0.5, t='out_cubic').start(self.logo_widget)
+        Animation(opacity=1, duration=0.6).start(self.rings)
         Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.4).start(self.app_name), 0.3)
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.4).start(self.loader), 0.5)
+        Clock.schedule_once(lambda dt: Animation(opacity=1, duration=0.4).start(self.status), 0.6)
 
-        # Transition to main screen after delay
-        Clock.schedule_once(self._go_to_main, 1.8)
+        self._loop(self.rings, 2.0, phase=1)
+        self._loop(self.loader, 1.2, phase=1)
+        # Heartbeat on the logo; the layout keeps it centred while it breathes.
+        beat = (Animation(size=(dp(142), dp(142)), duration=0.6, t='in_out_sine')
+                + Animation(size=(dp(132), dp(132)), duration=0.6, t='in_out_sine'))
+        beat.repeat = True
+        beat.start(self.logo_widget)
+        self._loops.append((beat, self.logo_widget))
+
+        for i, text in enumerate(self.STATUS_STEPS):
+            Clock.schedule_once(lambda dt, t=text: setattr(self.status, 'text', t), 0.6 * i)
+
+        Clock.schedule_once(self._go_to_main, 2.4)
 
     def _go_to_main(self, dt):
-        # Fade out
+        for anim, target in self._loops:
+            anim.stop(target)
+        self._loops = []
         fade_out = Animation(opacity=0, duration=0.25)
-        fade_out.start(self.logo_widget)
-        fade_out.start(self.app_name)
+        for w in (self.logo_widget, self.app_name, self.rings, self.loader, self.status):
+            fade_out.start(w)
 
-        # Switch screen
         def switch(dt):
             app = App.get_running_app()
             if app and app.root:
