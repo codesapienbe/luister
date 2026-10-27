@@ -183,3 +183,6 @@ graphify-out/
 
 # Local AI tooling
 .claude/
+
+# Device screenshots (not committed for now)
+docs/screenshots/
