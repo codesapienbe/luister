@@ -1324,62 +1324,84 @@ class VisualizerWidget(Widget):
         self._draw_bars()
 
     @staticmethod
-    def _bar_color(mag):
-        Color(
-            Theme.VIZ_START[0] * (1 - mag) + Theme.VIZ_END[0] * mag,
-            Theme.VIZ_START[1] * (1 - mag) + Theme.VIZ_END[1] * mag,
-            Theme.VIZ_START[2] * (1 - mag) + Theme.VIZ_END[2] * mag,
-            0.9,
-        )
+    def _bar_color(mag, alpha=0.9, lift=0.0):
+        """Gradient colour for a level; lift brightens towards white for a lit-from-within feel."""
+        rgb = [
+            Theme.VIZ_START[k] * (1 - mag) + Theme.VIZ_END[k] * mag
+            for k in range(3)
+        ]
+        Color(*[min(1.0, c + (1.0 - c) * lift) for c in rgb], alpha)
 
     def _draw_bars(self, *args):
         self.canvas.clear()
         with self.canvas:
-            Color(*Theme.BG_SECONDARY)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(12)])
             getattr(self, f'_style_{self.STYLES[self.style]}')()
 
     def _style_bars(self):
-        bar_width = (self.width - dp(24)) / self.bars
-        padding = dp(12)
+        """Bars standing on a floor with a fading reflection underneath."""
+        bar_width = self.width / self.bars
+        floor = self.y + self.height * 0.28
+        max_h = self.height * 0.70
         for i, mag in enumerate(self.magnitudes):
-            self._bar_color(mag)
-            bar_height = max(dp(4), mag * (self.height - dp(24)) * 0.95)
-            RoundedRectangle(
-                pos=(self.x + padding + i * bar_width + dp(1), self.y + padding),
-                size=(bar_width - dp(2), bar_height),
-                radius=[dp(2), dp(2), 0, 0],
-            )
+            h = max(dp(4), mag * max_h)
+            x = self.x + i * bar_width + dp(1.5)
+            w = bar_width - dp(3)
+            # soft glow behind the bar
+            self._bar_color(mag, 0.15)
+            RoundedRectangle(pos=(x - dp(2), floor - dp(2)), size=(w + dp(4), h + dp(4)),
+                             radius=[dp(5)])
+            self._bar_color(mag, 0.95, lift=0.15 * mag)
+            RoundedRectangle(pos=(x, floor), size=(w, h), radius=[dp(3), dp(3), 0, 0])
+            # bright cap sells the 3D edge
+            self._bar_color(mag, 0.95, lift=0.6)
+            RoundedRectangle(pos=(x, floor + h - dp(3)), size=(w, dp(3)), radius=[dp(2)])
+            # reflection
+            ref = min(h * 0.45, floor - self.y)
+            self._bar_color(mag, 0.22)
+            RoundedRectangle(pos=(x, floor - ref - dp(2)), size=(w, ref),
+                             radius=[0, 0, dp(3), dp(3)])
 
     def _style_mirror(self):
-        """Bars growing up and down from a centre line."""
-        bar_width = (self.width - dp(24)) / self.bars
-        mid = self.y + self.height / 2
-        half_max = (self.height - dp(24)) / 2 * 0.95
+        """Bars growing up and down from a glowing centre line."""
+        bar_width = self.width / self.bars
+        mid = self.center_y
+        half_max = self.height / 2 * 0.92
         for i, mag in enumerate(self.magnitudes):
-            self._bar_color(mag)
             half = max(dp(2), mag * half_max)
-            RoundedRectangle(
-                pos=(self.x + dp(12) + i * bar_width + dp(1), mid - half),
-                size=(bar_width - dp(2), half * 2),
-                radius=[dp(3)],
-            )
+            x = self.x + i * bar_width + dp(1.5)
+            w = bar_width - dp(3)
+            self._bar_color(mag, 0.14)
+            RoundedRectangle(pos=(x - dp(3), mid - half - dp(3)), size=(w + dp(6), half * 2 + dp(6)),
+                             radius=[dp(6)])
+            self._bar_color(mag, 0.95, lift=0.1 * mag)
+            RoundedRectangle(pos=(x, mid - half), size=(w, half * 2), radius=[dp(3)])
+            # bright core
+            self._bar_color(mag, 0.9, lift=0.65)
+            RoundedRectangle(pos=(x + w * 0.35, mid - half * 0.6), size=(w * 0.3, half * 1.2),
+                             radius=[dp(1.5)])
 
     def _style_radial(self):
-        """Spokes radiating from a centre ring."""
+        """Spokes radiating from a glowing core, layered for depth."""
         cx, cy = self.center_x, self.center_y
-        reach = min(self.width, self.height) / 2 - dp(12)
+        reach = min(self.width, self.height) / 2 - dp(4)
         inner = reach * 0.3
-        for i, mag in enumerate(self.magnitudes):
-            angle = 2 * math.pi * i / self.bars - math.pi / 2
-            length = dp(3) + mag * (reach - inner)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
-            self._bar_color(mag)
-            Line(
-                points=[cx + cos_a * inner, cy + sin_a * inner,
-                        cx + cos_a * (inner + length), cy + sin_a * (inner + length)],
-                width=dp(2.5), cap='round',
-            )
+        avg = sum(self.magnitudes) / self.bars
+        # pulsing core: two translucent discs
+        self._bar_color(avg, 0.10)
+        Ellipse(pos=(cx - inner * 1.15, cy - inner * 1.15), size=(inner * 2.3, inner * 2.3))
+        self._bar_color(avg, 0.18)
+        Ellipse(pos=(cx - inner * 0.8, cy - inner * 0.8), size=(inner * 1.6, inner * 1.6))
+        for layer, (width, alpha, lift) in enumerate(((dp(7), 0.14, 0.0), (dp(3), 0.95, 0.1))):
+            for i, mag in enumerate(self.magnitudes):
+                angle = 2 * math.pi * i / self.bars - math.pi / 2
+                length = dp(3) + mag * (reach - inner)
+                cos_a, sin_a = math.cos(angle), math.sin(angle)
+                self._bar_color(mag, alpha, lift=lift + 0.5 * mag * layer)
+                Line(
+                    points=[cx + cos_a * inner, cy + sin_a * inner,
+                            cx + cos_a * (inner + length), cy + sin_a * (inner + length)],
+                    width=width, cap='round',
+                )
 
 
 # ============================================================================
@@ -1638,8 +1660,8 @@ class MainScreen(Screen):
         )
 
         # Visualizer sits in the optical centre with breathing room around it
-        layout.add_widget(Widget(size_hint=(1, 0.08)))
-        self.visualizer = VisualizerWidget(size_hint=(1, 0.62))
+        layout.add_widget(Widget(size_hint=(1, 0.02)))
+        self.visualizer = VisualizerWidget(size_hint=(1, 0.74))
         layout.add_widget(self.visualizer)
 
         # Track title
@@ -1683,7 +1705,7 @@ class MainScreen(Screen):
         lyrics_container.add_widget(self.lyrics_next)
         layout.add_widget(lyrics_container)
 
-        layout.add_widget(Widget(size_hint=(1, 0.1)))
+        layout.add_widget(Widget(size_hint=(1, 0.04)))
 
         # Progress: slider with the two timestamps tucked underneath
         self.progress_slider = NavigableSlider(
