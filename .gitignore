@@ -35,6 +35,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!mobile/buildozer.spec
 
 # Installer logs
 pip-log.txt
@@ -179,3 +180,6 @@ mobile/.DS_Store
 
 # graphify knowledge graphs
 graphify-out/
+
+# Local AI tooling
+.claude/

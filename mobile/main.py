@@ -2145,7 +2145,25 @@ class LuisterApp(App):
 
         return sm
 
+    def _request_android_permissions(self):
+        """Ask for audio library access; rescan music once the user answers."""
+        from android import api_version
+        from android.permissions import Permission, request_permissions
+
+        # READ_MEDIA_AUDIO exists from API 33; older versions use READ_EXTERNAL_STORAGE.
+        perm = (Permission.READ_MEDIA_AUDIO if api_version >= 33
+                else Permission.READ_EXTERNAL_STORAGE)
+
+        def on_result(permissions, grants):
+            if all(grants) and not self.playlist:
+                Clock.schedule_once(lambda dt: self.scan_music_directories(), 0)
+
+        request_permissions([perm], on_result)
+
     def on_start(self):
+        if platform == 'android':
+            self._request_android_permissions()
+
         self._update_event = Clock.schedule_interval(self._update_position, 0.1)
 
         volume = self.config_manager.volume

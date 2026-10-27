@@ -25,9 +25,9 @@ PROJECT_NAME := luister
 VERSION := 0.1.0
 PLATFORM ?= auto
 
-.PHONY: all clean install dev bundle bundle-macos bundle-windows bundle-linux \
+.PHONY: all clean install dev coverage bundle bundle-macos bundle-windows bundle-linux \
         dmg appimage deb installer run test lint help \
-        android android-setup android-debug android-release android-deploy android-run android-logcat android-clean \
+        android android-setup android-debug android-release android-deploy android-install android-run android-logcat android-uninstall android-clean \
         ios ios-setup ios-build ios-xcode ios-clean
 
 # Default target
@@ -56,13 +56,16 @@ help:
 	@echo "  make installer  - Create Windows installer (requires Windows + NSIS)"
 	@echo ""
 	@echo "Android (Kivy/Buildozer):"
-	@echo "  make android         - Build debug APK and deploy (quick dev cycle)"
+	@echo "  make android         - Build debug APK and install (TARGET=usb|wifi, or DEVICE_ID=<serial>)"
+	@echo "  make bundle PLATFORM=android - Same as android-debug"
 	@echo "  make android-setup   - Install Android build dependencies"
 	@echo "  make android-debug   - Build debug APK only"
 	@echo "  make android-release - Build release APK"
-	@echo "  make android-deploy  - Deploy to connected device"
-	@echo "  make android-run     - Build, deploy, and show logs"
-	@echo "  make android-logcat  - Show device logs"
+	@echo "  make android-deploy  - Build + install on TARGET=usb|wifi device (default usb)"
+	@echo "  make android-install - Install the last built APK without rebuilding"
+	@echo "  make android-run     - Build, install, launch, and follow logs"
+	@echo "  make android-logcat  - Launch app and follow its logs"
+	@echo "  make android-uninstall - Remove the app from the device"
 	@echo "  make android-clean   - Clean Android build artifacts"
 	@echo ""
 	@echo "iOS (Kivy-iOS, macOS only):"
@@ -92,13 +95,22 @@ run:
 test:
 	$(PYTHON_CMD) -m pytest tests/ -v
 
+# Full suite with line coverage for src/luister and mobile/ (headless Qt/Kivy).
+coverage:
+	QT_QPA_PLATFORM=offscreen $(PYTHON_CMD) -m pytest tests/ --cov --cov-report=term-missing
+
 lint:
 	$(PYTHON_CMD) -m flake8 src/
 	$(PYTHON_CMD) -m black --check src/
 
 # Build targets
+# PLATFORM=android builds the debug APK instead (see android-* targets).
 bundle:
+ifeq ($(PLATFORM),android)
+	$(MAKE) android-debug
+else
 	uv run python packaging/build.py --clean --platform $(PLATFORM)
+endif
 
 bundle-macos:
 	$(MAKE) bundle PLATFORM=macos
@@ -172,12 +184,51 @@ upload: dist
 # ANDROID BUILD TARGETS (Kivy/Buildozer)
 # =============================================================================
 
-# Buildozer command using uv
-ifdef UV
-    BUILDOZER := cd mobile && uv run buildozer
-else
-    BUILDOZER := cd mobile && $(PYTHON) -m buildozer
+# Where `make deploy` installs: usb | wifi. DEVICE_ID=<serial> bypasses the lookup.
+TARGET ?= usb
+ANDROID_PKG := be.codesapien.luister
+ANDROID_APK_DIR := mobile/bin
+
+# Buildozer/Gradle need JDK 17 (or 21); the machine default may be newer and breaks
+# the build. Pick one from sdkman, then macOS java_home; otherwise leave JAVA_HOME alone.
+JAVA17 := $(firstword $(shell ls -d $(HOME)/.sdkman/candidates/java/17* 2>/dev/null) $(shell /usr/libexec/java_home -v 17 2>/dev/null))
+ifneq ($(JAVA17),)
+export JAVA_HOME := $(JAVA17)
+export PATH := $(JAVA17)/bin:$(PATH)
 endif
+
+# Run buildozer with the project venv's interpreter directly: `uv run buildozer` can
+# resolve to a pipx-installed buildozer whose python has no pip, and re-syncs the project.
+# The newest macOS SDK declares pipe2/dup3 (macOS 27+) and -Werror breaks the host-python build.
+BUILDOZER := cd mobile && ac_cv_func_pipe2=no ac_cv_func_dup3=no VIRTUAL_ENV="$(abspath $(VENV))" PATH="$(abspath $(VENV))/bin:$$PATH" $(abspath $(PYTHON)) -m buildozer
+
+# Resolve the adb serial for TARGET into $$serial (shell snippet, used by android-* targets).
+#   usb  -> the one device whose `adb devices -l` line has a usb: field
+#   wifi -> the one device connected over TCP (ip:port serial, or mDNS adb-*._adb-tls-connect)
+define ADB_PICK_DEVICE
+command -v adb >/dev/null || { echo "❌ adb not on PATH — add \$$ANDROID_HOME/platform-tools to it."; exit 2; }; \
+serial="$(DEVICE_ID)"; \
+if [ -z "$$serial" ]; then \
+  case "$(TARGET)" in \
+    usb)  list="$$(adb devices -l | awk '$$2 == "device" && / usb:/ { print $$1 }')";; \
+    wifi) list="$$(adb devices -l | awk '$$2 == "device" && !/ usb:/ && ($$1 ~ /^[0-9.]+:[0-9]+$$/ || $$1 ~ /_adb-tls-connect/) { print $$1 }')";; \
+    *) echo "❌ TARGET=$(TARGET) is not supported. Use TARGET=usb|wifi, or DEVICE_ID=<serial>."; exit 2;; \
+  esac; \
+  count="$$(printf '%s' "$$list" | grep -c . || true)"; \
+  if [ "$$count" -eq 0 ]; then \
+    echo "❌ no $(TARGET) device in 'adb devices -l'. Attached:"; \
+    adb devices -l | tail -n +2 | sed '/^$$/d; s/^/  /'; \
+    [ "$(TARGET)" = "wifi" ] && echo "   (pair/connect first: adb pair <ip:port>; adb connect <ip:port>)"; \
+    exit 1; \
+  fi; \
+  if [ "$$count" -gt 1 ]; then \
+    echo "❌ $$count $(TARGET) devices attached — pick one with DEVICE_ID=<serial>:"; printf '  %s\n' $$list; exit 1; \
+  fi; \
+  serial="$$list"; \
+elif [ "$$(adb -s "$$serial" get-state 2>/dev/null)" != "device" ]; then \
+  echo "❌ $$serial is not an attached adb device. 'adb devices -l' lists them."; exit 2; \
+fi
+endef
 
 android-setup:
 	@echo "Setting up Android development environment..."
@@ -188,29 +239,58 @@ else
 endif
 	@echo "JAVA_HOME: $$JAVA_HOME"
 
-# Quick dev cycle: build + deploy
-android: android-debug android-deploy
-	@echo "Done! App deployed to device."
+# Quick dev cycle: pick the device first (fails fast), build, install.
+#   make android                  -> debug APK to the USB device
+#   make android TARGET=wifi      -> ... to the wireless-debugging device
+android: android-deploy
 
 android-debug:
 	@echo "Building Android debug APK..."
 	$(BUILDOZER) android debug
-	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
+	@ls -la $(ANDROID_APK_DIR)/*.apk 2>/dev/null || echo "No APK found"
 
 android-release:
-	@echo "Building Android release APK..."
+	@echo "Building Android release APK (unsigned unless signing is configured)..."
 	$(BUILDOZER) android release
-	@ls -la mobile/bin/*.apk 2>/dev/null || echo "No APK found"
+	@ls -la $(ANDROID_APK_DIR)/*.apk 2>/dev/null || echo "No APK found"
 
+# Device is resolved BEFORE the build so a missing phone fails in a second, not after
+# a long build. Installs the newest debug APK; does not launch (see android-run).
 android-deploy:
-	$(BUILDOZER) android deploy run
+	@set -e; \
+	$(ADB_PICK_DEVICE); \
+	echo "▶ deploy → $$serial ($(TARGET))"; \
+	$(MAKE) --no-print-directory android-debug; \
+	apk="$$(ls -t $(ANDROID_APK_DIR)/*-debug.apk 2>/dev/null | head -1)"; \
+	[ -n "$$apk" ] || { echo "❌ no debug APK in $(ANDROID_APK_DIR)"; exit 1; }; \
+	adb -s "$$serial" install -r "$$apk"; \
+	echo "✓ $$apk installed on $$serial (not launched)."
 
-android-run: android-debug
-	$(BUILDOZER) android deploy run logcat
+# Install the already-built APK without rebuilding.
+android-install:
+	@set -e; \
+	$(ADB_PICK_DEVICE); \
+	apk="$$(ls -t $(ANDROID_APK_DIR)/*-debug.apk 2>/dev/null | head -1)"; \
+	[ -n "$$apk" ] || { echo "❌ no debug APK — run 'make android-debug' first."; exit 1; }; \
+	adb -s "$$serial" install -r "$$apk"; \
+	echo "✓ $$apk installed on $$serial."
+
+# Build, install, launch and follow the app's logs.
+android-run: android-deploy android-logcat
+	@true
 
 android-logcat:
-	@echo "Showing Android logcat (Ctrl+C to stop)..."
-	adb logcat | grep -iE "(python|kivy|luister)"
+	@set -e; \
+	$(ADB_PICK_DEVICE); \
+	adb -s "$$serial" shell monkey -p $(ANDROID_PKG) -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true; \
+	echo "Showing logcat for $(ANDROID_PKG) on $$serial (Ctrl+C to stop)..."; \
+	adb -s "$$serial" logcat -c; \
+	adb -s "$$serial" logcat -v time python:V SDL:V SDLActivity:V AndroidRuntime:E '*:S'
+
+android-uninstall:
+	@set -e; \
+	$(ADB_PICK_DEVICE); \
+	adb -s "$$serial" uninstall $(ANDROID_PKG)
 
 android-clean:
 	@echo "Cleaning Android build artifacts..."

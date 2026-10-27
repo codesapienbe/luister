@@ -52,6 +52,8 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
     "pytest-qt>=3.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.12.0",
     "black>=26.3.1",
     "flake8>=4.0.0",
     "opentelemetry-sdk>=1.24.0",
@@ -81,3 +83,12 @@ qt_api = "pyqt6"
 
 [tool.setuptools.package-data]
 "luister" = ["*.ui", "img/*.png"]
+
+[tool.coverage.run]
+source = ["src/luister", "mobile"]
+omit = ["mobile/.buildozer/*", "mobile/bin/*"]
+parallel = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
