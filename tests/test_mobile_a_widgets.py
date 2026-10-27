@@ -178,7 +178,7 @@ def test_load_audio_android(monkeypatch, android):
     assert isinstance(player, m.AndroidMediaPlayer) and len(logs) == 2
     assert isinstance(m.load_audio("/a.mp3"), m.AndroidMediaPlayer)
 
-    def boom(*a):
+    def boom(*a, **k):
         raise RuntimeError("nope")
 
     monkeypatch.setattr(m, "AndroidMediaPlayer", boom)

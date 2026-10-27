@@ -210,7 +210,7 @@ def run_download(app, monkeypatch, tmp_path, files, fail=None, playing=False):
     FakeYDL.fail = fail
     monkeypatch.setitem(sys.modules, 'yt_dlp', types.SimpleNamespace(YoutubeDL=FakeYDL))
     app.is_playing = playing
-    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None: FakeSound())
+    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None, on_complete=None: FakeSound())
     pop = m.YouTubeDownloadPopup()
     pop.open()
     app.download_youtube('http://y', pop)
@@ -556,7 +556,7 @@ def test_open_folder_and_selection(app, tmp_path, monkeypatch):
     app.open_folder()
     assert app.main_screen.title_label.text.startswith('Error: picker')
 
-    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None: FakeSound())
+    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None, on_complete=None: FakeSound())
     app._on_files_selected([])
     app._on_files_selected(['/a/b.txt'])
     assert app.playlist == []
@@ -570,7 +570,7 @@ def test_playback_controls(app, tmp_path, monkeypatch):
     files = [make_audio(tmp_path, f't{i}.mp3') for i in range(3)]
     sounds = []
 
-    def loader(p, logger=None):
+    def loader(p, logger=None, on_complete=None):
         s = FakeSound()
         sounds.append(s)
         return s
@@ -654,16 +654,16 @@ def test_load_track_paths(app, tmp_path, monkeypatch):
     a = make_audio(tmp_path, 'a.mp3')
     old = FakeSound()
     app.sound = old
-    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None: None)
+    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None, on_complete=None: None)
     assert app.load_track(a) is False
     assert 'unload' in old.calls and app.sound is None
 
-    def boom(p, logger=None):
+    def boom(p, logger=None, on_complete=None):
         raise RuntimeError('bad')
     monkeypatch.setattr(m, 'load_audio', boom)
     assert app.load_track(a) is False
 
-    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None: FakeSound(length=0))
+    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None, on_complete=None: FakeSound(length=0))
     assert app.load_track(a) is True
 
 
@@ -691,7 +691,7 @@ def test_update_position(app, monkeypatch):
     app._update_position(0)
 
     # end of track -> next track
-    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None: FakeSound())
+    monkeypatch.setattr(m, 'load_audio', lambda p, logger=None, on_complete=None: FakeSound())
     s2 = FakeSound(length=10, pos=9.8)
     app.sound = s2
     app._update_position(0)
@@ -758,7 +758,7 @@ def test_android_permissions(app, monkeypatch, tmp_path, api, expected):
     scans = []
     monkeypatch.setattr(app, 'scan_music_directories', lambda: scans.append(1))
     app.on_start()
-    assert req['p'] == [expected]
+    assert req['p'] == [expected] + (['android.permission.POST_NOTIFICATIONS'] if api >= 33 else [])
     scans.clear()
     req['cb']([expected], [True])
     assert scans == [1]
