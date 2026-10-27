@@ -33,7 +33,7 @@ from kivy.properties import (
     ListProperty, ColorProperty, ObjectProperty
 )
 from kivy.graphics import (
-    Color, Rectangle, RoundedRectangle, Line, Ellipse,
+    Color, Rectangle, RoundedRectangle, Line, Ellipse, Mesh,
     PushMatrix, PopMatrix, Rotate, Scale, Translate
 )
 from kivy.graphics.texture import Texture
@@ -1295,7 +1295,7 @@ class VisualizerWidget(Widget):
             self.target_magnitudes[i] = normalized
 
     # Style switching: hold a finger on the visualizer for 3 seconds.
-    STYLES = ('bars', 'mirror', 'radial')
+    STYLES = ('bars', 'wave', 'radial')
     HOLD_SECONDS = 3.0
 
     def on_touch_down(self, touch):
@@ -1361,47 +1361,49 @@ class VisualizerWidget(Widget):
             RoundedRectangle(pos=(x, floor - ref - dp(2)), size=(w, ref),
                              radius=[0, 0, dp(3), dp(3)])
 
-    def _style_mirror(self):
-        """Bars growing up and down from a glowing centre line."""
-        bar_width = self.width / self.bars
-        mid = self.center_y
-        half_max = self.height / 2 * 0.92
-        for i, mag in enumerate(self.magnitudes):
-            half = max(dp(2), mag * half_max)
-            x = self.x + i * bar_width + dp(1.5)
-            w = bar_width - dp(3)
-            self._bar_color(mag, 0.14)
-            RoundedRectangle(pos=(x - dp(3), mid - half - dp(3)), size=(w + dp(6), half * 2 + dp(6)),
-                             radius=[dp(6)])
-            self._bar_color(mag, 0.95, lift=0.1 * mag)
-            RoundedRectangle(pos=(x, mid - half), size=(w, half * 2), radius=[dp(3)])
-            # bright core
-            self._bar_color(mag, 0.9, lift=0.65)
-            RoundedRectangle(pos=(x + w * 0.35, mid - half * 0.6), size=(w * 0.3, half * 1.2),
-                             radius=[dp(1.5)])
+    def _style_wave(self):
+        """Smooth filled skyline standing on a floor, with a fading reflection."""
+        floor = self.y + self.height * 0.28
+        max_h = self.height * 0.70
+        step = self.width / (self.bars - 1)
+        xs = [self.x + i * step for i in range(self.bars)]
+        hs = [max(dp(3), m * max_h) for m in self.magnitudes]
+        avg = sum(self.magnitudes) / self.bars
+        for scale, alpha, direction in ((1.0, 0.55, 1), (0.45, 0.16, -1)):
+            self._bar_color(avg, alpha)
+            verts = []
+            for x, h in zip(xs, hs):
+                verts += [x, floor, 0, 0, x, floor + direction * h * scale, 0, 0]
+            Mesh(vertices=verts, indices=list(range(self.bars * 2)), mode='triangle_strip')
+        # glowing ridge line on top
+        for width, alpha in ((dp(7), 0.18), (dp(2.5), 0.95)):
+            self._bar_color(min(1.0, avg * 1.6), alpha, lift=0.5)
+            Line(points=[c for x, h in zip(xs, hs) for c in (x, floor + h)],
+                 width=width, joint='round', cap='round')
 
     def _style_radial(self):
-        """Spokes radiating from a glowing core, layered for depth."""
-        cx, cy = self.center_x, self.center_y
-        reach = min(self.width, self.height) / 2 - dp(4)
-        inner = reach * 0.3
-        avg = sum(self.magnitudes) / self.bars
-        # pulsing core: two translucent discs
-        self._bar_color(avg, 0.10)
-        Ellipse(pos=(cx - inner * 1.15, cy - inner * 1.15), size=(inner * 2.3, inner * 2.3))
-        self._bar_color(avg, 0.18)
-        Ellipse(pos=(cx - inner * 0.8, cy - inner * 0.8), size=(inner * 1.6, inner * 1.6))
-        for layer, (width, alpha, lift) in enumerate(((dp(7), 0.14, 0.0), (dp(3), 0.95, 0.1))):
-            for i, mag in enumerate(self.magnitudes):
-                angle = 2 * math.pi * i / self.bars - math.pi / 2
-                length = dp(3) + mag * (reach - inner)
-                cos_a, sin_a = math.cos(angle), math.sin(angle)
-                self._bar_color(mag, alpha, lift=lift + 0.5 * mag * layer)
-                Line(
-                    points=[cx + cos_a * inner, cy + sin_a * inner,
-                            cx + cos_a * (inner + length), cy + sin_a * (inner + length)],
-                    width=width, cap='round',
-                )
+        """Fan of spokes rising from the floor (stretched to fill the screen), mirrored below."""
+        cx = self.center_x
+        floor = self.y + self.height * 0.28
+        rx = self.width / 2 - dp(6)
+        ry = self.height * 0.70
+        inner = 0.28
+        inner_x = 0.5
+        for flip, fade in ((1, 1.0), (-1, 0.22)):
+            scale = 1.0 if flip == 1 else 0.45
+            for layer, (width, alpha, lift) in enumerate(((dp(7), 0.14, 0.0), (dp(3), 0.95, 0.1))):
+                for i, mag in enumerate(self.magnitudes):
+                    angle = math.pi * (i + 0.5) / self.bars
+                    cos_a, sin_a = math.cos(angle), math.sin(angle)
+                    level = 0.12 + 0.88 * mag
+                    reach = inner + level * (1 - inner)
+                    reach_x = inner_x + level * (1 - inner_x)
+                    self._bar_color(mag, alpha * fade, lift=lift + 0.5 * mag * layer)
+                    Line(
+                        points=[cx - cos_a * rx * inner_x, floor + flip * sin_a * ry * inner * scale,
+                                cx - cos_a * rx * reach_x, floor + flip * sin_a * ry * reach * scale],
+                        width=width, cap='round',
+                    )
 
 
 # ============================================================================
